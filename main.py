@@ -3,84 +3,66 @@
 Quiz Kiosco - Hackathon
 Pantalla completa sin salida manual.
 
-- No se cierra con Esc ni con el botón de cerrar la ventana: no hacen nada.
-- Avanza solo cuando respondes cada pregunta.
-- La ÚNICA forma de salir es terminar el quiz: al responder la última
-  pregunta aparece el botón "Salir".
+Flujo de la partida:
 
-Bloqueo de teclado en tres niveles:
-  - Nivel 1 (siempre): neutraliza atajos (Alt+F4, Ctrl+W/Q, Alt+Tab)
-    mientras la ventana tiene el foco. No necesita nada extra.
-  - Nivel 2 (opcional, BLOQUEO_GLOBAL=True): con la librería 'keyboard'
-    suprime la tecla Windows y varios atajos de cambio de ventana a nivel
-    de sistema. Requiere 'pip install keyboard' y normalmente permisos de
-    administrador.
-  - Nivel 3 (opcional, BLOQUEO_REGISTRO=True): deshabilita el Administrador
-    de tareas (Ctrl+Shift+Esc) y Win+L vía registro. Solo Windows. Se
-    restaura al salir.
+    minijuego -> 5 preguntas -> minijuego -> 5 preguntas -> jefe final (6)
 
-Ctrl+Alt+Supr NUNCA se bloquea (es imposible sin un driver de kernel, y
-es a propósito: es tu red de seguridad para no dejar el equipo colgado).
-Ejecútalo en tu propio ordenador.
+- Cada minijuego da comodines según el rango:
+      alto  2 | medio  1 | bajo  0
+  Un comodín se gasta al fallar y deja volver a intentar la misma pregunta.
+- El primer fallo de la partida imprime el nombre del jugador por pantalla.
+- El resto de fallos de las rondas aplican un castigo aleatorio.
+- En el jefe final hacen falta 4 aciertos de 6; con 3 o menos se borra un
+  archivo.
+
+Los castigos actúan SOLO dentro de ``zona_castigo`` (ver castigos.py).
+Salida de emergencia para el operador: pulsar F12 tres veces seguidas.
+Ctrl+Alt+Supr sigue funcionando siempre.
 """
 
-import sys
-import tkinter as tk
 import json
+import random
+import time
+import tkinter as tk
 from pathlib import Path
 from tkinter import messagebox
 
-# El bloqueo global (Nivel 2) es opcional: si no está la librería
-# 'keyboard', el programa sigue funcionando solo con el Nivel 1.
+import estilo as T
+from castigos import Castigos
+from minijuegos import MINIJUEGOS
+
+# ----------------------------------------------------------------------
+# CONFIGURACIÓN — edita esto
+# ----------------------------------------------------------------------
+
+BLOQUEO_GLOBAL = True            # Nivel 2: tecla Windows y Alt+Tab
+BLOQUEO_REGISTRO = True          # Nivel 3: Task Manager y Win+L (solo Windows)
+
+PREGUNTAS_POR_RONDA = 5
+PREGUNTAS_JEFE = 6
+ACIERTOS_MINIMOS_JEFE = 4
+NEUTRALIZAR_ATAJOS = ("<Alt-F4>", "<Control-w>", "<Control-q>",
+                      "<Control-W>", "<Control-Q>", "<Alt-Tab>")
+
 try:
     import keyboard  # pip install keyboard
     _KEYBOARD_OK = True
 except Exception:
     _KEYBOARD_OK = False
 
-# winreg solo existe en Windows. En otros SO el bloqueo por registro
-# (Nivel 3) queda desactivado automáticamente.
 try:
     import winreg  # noqa: solo Windows
     _WINREG_OK = True
 except Exception:
     _WINREG_OK = False
 
-# ----------------------------------------------------------------------
-# CONFIGURACIÓN — edita esto
-# ----------------------------------------------------------------------
-
-BLOQUEO_GLOBAL = True            # Nivel 2: suprimir tecla Windows y Alt+Tab
-BLOQUEO_REGISTRO = True          # Nivel 3: deshabilitar Administrador de
-                                 # tareas (Ctrl+Shift+Esc) y Win+L vía
-                                 # registro. Solo Windows. Se restaura al
-                                 # salir.
-
-# ----------------------------------------------------------------------
-# APLICACIÓN
-# ----------------------------------------------------------------------
-
-BG = "#0f1117"
-FG = "#e6e6e6"
-ACCENT = "#5b8def"
-OK = "#3ecf8e"
-BAD = "#ef5b5b"
-CARD = "#1a1d27"
-
 
 class BloqueoRegistro:
     """Nivel 3: deshabilita Administrador de tareas y Win+L por registro.
 
     Escribe dos valores DWORD = 1 bajo
-    HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System:
-      - DisableTaskMgr       -> tapa Ctrl+Shift+Esc y el botón del
-                                 Administrador de tareas en Ctrl+Alt+Supr.
-      - DisableLockWorkstation -> tapa Win+L y el botón "Bloquear".
-
-    Usa HKCU (no HKLM), así que afecta solo a este usuario y no necesita
-    permisos de administrador. Guarda el estado previo de cada valor y lo
-    restaura EXACTAMENTE al salir: si no existía, lo borra; si existía con
-    otro valor, lo repone.
+    HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System.
+    Guarda el estado previo y lo restaura exactamente al salir.
     """
 
     _SUBKEY = r"Software\Microsoft\Windows\CurrentVersion\Policies\System"
@@ -88,45 +70,38 @@ class BloqueoRegistro:
 
     def __init__(self):
         self._activo = False
-        self._previos = {}  # nombre -> valor original, o None si no existía
+        self._previos = {}
 
     def activar(self):
         if not _WINREG_OK:
             return False
         try:
-            # Abre o crea la clave con permiso de escritura y lectura.
             clave = winreg.CreateKeyEx(
                 winreg.HKEY_CURRENT_USER, self._SUBKEY, 0,
                 winreg.KEY_READ | winreg.KEY_SET_VALUE,
             )
             try:
                 for nombre in self._VALORES:
-                    # Guarda el valor actual (o None si no está).
                     try:
                         valor, _ = winreg.QueryValueEx(clave, nombre)
                         self._previos[nombre] = valor
                     except FileNotFoundError:
                         self._previos[nombre] = None
-                    # Lo pone a 1.
-                    winreg.SetValueEx(
-                        clave, nombre, 0, winreg.REG_DWORD, 1
-                    )
+                    winreg.SetValueEx(clave, nombre, 0, winreg.REG_DWORD, 1)
             finally:
                 winreg.CloseKey(clave)
             self._activo = True
             return True
-        except Exception as e:
+        except Exception as error:
             messagebox.showinfo(
                 "Bloqueo de registro desactivado",
                 "No se pudieron escribir las políticas de registro.\n\n"
-                "El quiz sigue funcionando con los demás bloqueos.\n\n"
-                f"Detalle: {e}",
+                f"Detalle: {error}",
             )
             self._activo = False
             return False
 
     def restaurar(self):
-        # Se llama SIEMPRE al salir para no dejar el equipo capado.
         if not self._activo:
             return
         try:
@@ -137,16 +112,12 @@ class BloqueoRegistro:
             try:
                 for nombre, previo in self._previos.items():
                     if previo is None:
-                        # No existía: borrarlo (si ya no está, da igual).
                         try:
                             winreg.DeleteValue(clave, nombre)
                         except FileNotFoundError:
                             pass
                     else:
-                        # Existía: reponer su valor original.
-                        winreg.SetValueEx(
-                            clave, nombre, 0, winreg.REG_DWORD, previo
-                        )
+                        winreg.SetValueEx(clave, nombre, 0, winreg.REG_DWORD, previo)
             finally:
                 winreg.CloseKey(clave)
         except Exception:
@@ -155,207 +126,530 @@ class BloqueoRegistro:
             self._activo = False
 
 
-class QuizKiosco:
+class Aplicacion:
     def __init__(self, root, preguntas):
         self.root = root
         self.preguntas = preguntas
-        self.indice = 0
+
+        self.usuario = "anónimo"
+        self.castigos = None
+        self.registro = []
+        self.pantalla = None
+        self.pregunta_actual = None
+        self.es_jefe = False
+        self.seleccion = None
+        self.opciones = []
+        self.respondida = True
+        self.bloqueadas = set()
+        self.comodines = 0
         self.aciertos = 0
-        self.seleccion = tk.IntVar(value=-1)
-        self.respondida = False
+        self.fallos = 0
+        self.comodines_usados = 0
+        self.aciertos_jefe = 0
+        self.jefe_idx = 0
+        self.primer_fallo = True
+        self.ronda_actual = 1
+        self.indice_pregunta = 0
+        self.preguntas_ronda = []
+        self.minijuegos = []
+        self._f12 = []
 
         root.title("Quiz Hackathon")
-        root.configure(bg=BG)
+        root.configure(bg=T.BG)
         root.attributes("-fullscreen", True)
         root.attributes("-topmost", True)
 
-        # Cerrar la ventana (botón X / Alt+F4) no hace nada.
         root.protocol("WM_DELETE_WINDOW", lambda: None)
-        # Esc no hace nada.
-        root.bind("<Escape>", lambda e: "break")
-        # Si pierde el foco, vuelve a traerse al frente (suave)
+        root.bind("<Escape>", lambda evento: "break")
+        for secuencia in NEUTRALIZAR_ATAJOS:
+            root.bind(secuencia, lambda evento: "break")
         root.bind("<FocusOut>", self._recuperar_foco)
+        root.bind("<F12>", self._salida_emergencia)
 
-        # --- NIVEL 1: neutralizar atajos mientras la ventana tiene foco ---
-        # Devolver "break" evita que el atajo llegue a su acción por defecto.
-        for seq in ("<Alt-F4>", "<Control-w>", "<Control-q>",
-                    "<Control-W>", "<Control-Q>", "<Alt-Tab>"):
-            root.bind(seq, lambda e: "break")
-
-        # --- NIVEL 2: bloqueo global (tecla Windows, Alt+Tab) -------------
         self._bloqueo_global_activo = False
         if BLOQUEO_GLOBAL and _KEYBOARD_OK:
             self._activar_bloqueo_global()
 
-        # --- NIVEL 3: bloqueo por registro (Task Manager, Win+L) ----------
         self.bloqueo_registro = BloqueoRegistro()
         if BLOQUEO_REGISTRO:
             self.bloqueo_registro.activar()
 
-        self._construir_ui()
-        self._mostrar_pregunta()
+        self.contenedor = tk.Frame(root, bg=T.BG)
+        self.contenedor.pack(fill="both", expand=True)
 
-    # -- UI --------------------------------------------------------------
-    def _construir_ui(self):
-        self.contador = tk.Label(
-            self.root, text="", font=("Segoe UI", 16),
-            bg=BG, fg=ACCENT,
+        print("[quiz] salida de emergencia del operador: F12 tres veces seguidas")
+        self._pantalla_inicio()
+
+    # ---------------------------------------------------------- utilidades
+
+    def _consola(self, texto):
+        print(texto)
+        self.registro.append(texto)
+        if len(self.registro) > 300:
+            del self.registro[:100]
+
+    def _nueva(self):
+        return tk.Frame(self.contenedor, bg=T.BG)
+
+    def _mostrar(self, pantalla):
+        anterior = self.pantalla
+        self.pantalla = pantalla
+        pantalla.pack(fill="both", expand=True)
+        if anterior is not None:
+            try:
+                anterior.destroy()
+            except Exception:
+                pass
+
+    def _boton(self, padre, texto, comando, color=T.ACCENT):
+        return tk.Button(
+            padre, text=texto, command=comando, font=T.ui(15, True),
+            bg=color, fg="white", activebackground=color,
+            activeforeground="white", relief="flat", padx=30, pady=10,
+            cursor="hand2",
         )
-        self.contador.pack(pady=(40, 10))
 
-        self.lbl_pregunta = tk.Label(
-            self.root, text="", font=("Segoe UI", 28, "bold"),
-            bg=BG, fg=FG, wraplength=1100, justify="center",
+    def _texto(self, padre, texto, tam=13, color=T.FG, negrita=False,
+               pady=4, wrap=1040):
+        etiqueta = tk.Label(
+            padre, text=texto, font=T.ui(tam, negrita), bg=T.BG, fg=color,
+            wraplength=wrap, justify="center",
         )
-        self.lbl_pregunta.pack(pady=(10, 40))
+        etiqueta.pack(pady=pady)
+        return etiqueta
 
-        self.frame_opciones = tk.Frame(self.root, bg=BG)
-        self.frame_opciones.pack()
+    # ------------------------------------------------------------- inicio
 
-        self.botones = []
-        for i in range(4):
-            b = tk.Radiobutton(
-                self.frame_opciones, text="", variable=self.seleccion,
-                value=i, font=("Segoe UI", 20), bg=CARD, fg=FG,
-                selectcolor=CARD, activebackground=CARD, activeforeground=FG,
-                indicatoron=True, anchor="w", padx=20, pady=16,
-                width=50, command=self._on_seleccion,
+    def _pantalla_inicio(self):
+        f = self._nueva()
+        self._texto(f, "QUIZ HACKATHON", 44, T.ACCENT, True, pady=(70, 4))
+        self._texto(
+            f, "10 preguntas · 2 minijuegos · 1 jefe final",
+            16, T.MUTED, False, pady=(0, 30),
+        )
+        self._texto(
+            f,
+            "Cada fallo tiene consecuencias.\n"
+            "Los castigos solo afectan a la carpeta zona_castigo del proyecto.",
+            14, T.WARN, False, pady=(0, 26),
+        )
+
+        caja = tk.Frame(f, bg=T.PANEL, highlightbackground=T.ACCENT,
+                        highlightthickness=1)
+        caja.pack(pady=10)
+        tk.Label(caja, text="¿Cómo te llamas?", font=T.ui(15), bg=T.PANEL,
+                 fg=T.FG).pack(padx=50, pady=(24, 10))
+        self.entrada = tk.Entry(
+            caja, font=T.ui(20), bg="#0b0e14", fg=T.FG,
+            insertbackground=T.FG, relief="flat", justify="center", width=24,
+        )
+        self.entrada.pack(padx=50, pady=(0, 22))
+        self.entrada.bind("<Return>", lambda evento: self._empezar_partida())
+        self.entrada.focus_set()
+
+        self._boton(f, "EMPEZAR", self._empezar_partida).pack(pady=26)
+        self._mostrar(f)
+
+    def _empezar_partida(self):
+        usuario = self.entrada.get().strip()
+        self.usuario = usuario or "anónimo"
+
+        necesarias = PREGUNTAS_POR_RONDA * 2 + PREGUNTAS_JEFE
+        if len(self.preguntas) < necesarias:
+            raise SystemExit(
+                f"Faltan preguntas: hay {len(self.preguntas)} y hacen falta "
+                f"{necesarias}. Añade más filas a preguntas.csv y reconvierte."
             )
-            b.pack(pady=8, fill="x")
-            self.botones.append(b)
+        random.shuffle(self.preguntas)
+        self.ronda_1 = self.preguntas[:PREGUNTAS_POR_RONDA]
+        self.ronda_2 = self.preguntas[PREGUNTAS_POR_RONDA:PREGUNTAS_POR_RONDA * 2]
+        self.jefe = self.preguntas[PREGUNTAS_POR_RONDA * 2:necesarias]
 
-        self.lbl_feedback = tk.Label(
-            self.root, text="", font=("Segoe UI", 18),
-            bg=BG, fg=FG,
+        self.minijuegos = random.sample(list(MINIJUEGOS), 2)
+        self.castigos = Castigos(self.usuario, log=self._consola)
+        self._consola("[quiz] ------------------------------------------")
+        self._consola(f"[quiz] jugador: {self.usuario}")
+        self._consola(f"[quiz] zona de castigo: {self.castigos.base}")
+        self._consola("[quiz] ------------------------------------------")
+
+        self._lanzar_minijuego(0)
+
+    # --------------------------------------------------------- minijuegos
+
+    def _lanzar_minijuego(self, indice):
+        self.minijuego_idx = indice
+        clase = self.minijuegos[indice]
+
+        f = self._nueva()
+        self._texto(
+            f, f"MINIJUEGO {indice + 1} DE 2", 14, T.MUTED, True,
+            pady=(70, 6),
         )
-        self.lbl_feedback.pack(pady=30)
-
-        self.btn_siguiente = tk.Button(
-            self.root, text="Responder", font=("Segoe UI", 18, "bold"),
-            bg=ACCENT, fg="white", activebackground=ACCENT,
-            relief="flat", padx=40, pady=12, command=self._accion_boton,
-            state="disabled",
+        self._texto(f, clase.nombre, 42, T.ACCENT, True, pady=(0, 10))
+        self._texto(f, clase.ayuda, 16, T.FG, False, pady=(0, 26))
+        self._texto(
+            f,
+            f"Rango ALTO  +2 comodines     Rango MEDIO  +1     "
+            f"Rango BAJO  +0\nDuración: {int(clase.duracion)} segundos",
+            14, T.MUTED, False, pady=(0, 30),
         )
-        self.btn_siguiente.pack(pady=10)
+        self._boton(
+            f, "JUGAR", lambda: self._empezar_minijuego(clase)
+        ).pack()
+        self._mostrar(f)
 
-        self.lbl_ayuda = tk.Label(
-            self.root,
-            text="Responde todas las preguntas para terminar",
-            font=("Segoe UI", 12), bg=BG, fg="#6b7280",
+    def _empezar_minijuego(self, clase):
+        juego = clase(self.contenedor, self._fin_minijuego)
+        self._mostrar(juego)
+
+    def _fin_minijuego(self, puntos, rango, comodines):
+        self.comodines += comodines
+        f = self._nueva()
+        color = {"alto": T.OK, "medio": T.WARN, "bajo": T.BAD}[rango]
+        self._texto(f, f"RANGO {rango.upper()}", 42, color, True, pady=(110, 10))
+        self._texto(f, f"{puntos} puntos", 26, T.FG, True, pady=(0, 16))
+        self._texto(
+            f,
+            f"+{comodines} comodín(es)   ·   acumulas {self.comodines}",
+            17, color, True, pady=(0, 30),
         )
-        self.lbl_ayuda.pack(side="bottom", pady=20)
-
-    def _mostrar_pregunta(self):
-        p = self.preguntas[self.indice]
-        self.respondida = False
-        self.seleccion.set(-1)
-        self.contador.config(
-            text=f"Pregunta {self.indice + 1} de {len(self.preguntas)}"
+        self._texto(
+            f,
+            "Un comodín se gasta al fallar y te deja volver a intentarlo.",
+            13, T.MUTED, False, pady=(0, 30),
         )
-        self.lbl_pregunta.config(text=p["pregunta"])
-        for i, b in enumerate(self.botones):
-            if i < len(p["opciones"]):
-                b.config(text=p["opciones"][i], state="normal", bg=CARD, fg=FG)
-                b.pack(pady=8, fill="x")
-            else:
-                b.pack_forget()
-        self.lbl_feedback.config(text="")
-        self.btn_siguiente.config(text="Responder", state="disabled")
+        self._boton(f, "CONTINUAR", self._tras_minijuego).pack()
+        self._mostrar(f)
 
-    # -- lógica ----------------------------------------------------------
-    def _on_seleccion(self):
-        if not self.respondida:
-            self.btn_siguiente.config(state="normal")
-
-    def _accion_boton(self):
-        if not self.respondida:
-            self._comprobar()
+    def _tras_minijuego(self):
+        if self.minijuego_idx == 0:
+            self._empezar_ronda(1)
         else:
-            self._avanzar()
+            self._intro_jefe()
 
-    def _comprobar(self):
-        if self.seleccion.get() == -1:
-            return
-        self.respondida = True
-        p = self.preguntas[self.indice]
-        correcta = p["correcta"]
-        elegida = self.seleccion.get()
+    # ------------------------------------------------------------ rondas
 
-        for b in self.botones:
-            b.config(state="disabled")
-        self.botones[correcta].config(bg=OK, fg="white")
-
-        if elegida == correcta:
-            self.aciertos += 1
-            self.lbl_feedback.config(text="✓ ¡Correcto!", fg=OK)
-        else:
-            self.botones[elegida].config(bg=BAD, fg="white")
-            self.lbl_feedback.config(
-                text=f"✗ Incorrecto. La respuesta era: {p['opciones'][correcta]}",
-                fg=BAD,
-            )
-
-        ultima = self.indice == len(self.preguntas) - 1
-        self.btn_siguiente.config(
-            text="Ver resultado" if ultima else "Siguiente", state="normal"
-        )
+    def _empezar_ronda(self, numero):
+        self.ronda_actual = numero
+        self.preguntas_ronda = self.ronda_1 if numero == 1 else self.ronda_2
+        self.indice_pregunta = 0
+        self._pantalla_pregunta()
 
     def _avanzar(self):
-        self.indice += 1
-        if self.indice < len(self.preguntas):
-            self._mostrar_pregunta()
+        if self.es_jefe:
+            self.jefe_idx += 1
+            if self.jefe_idx >= PREGUNTAS_JEFE:
+                self._veredicto_jefe()
+            else:
+                self._pantalla_pregunta(es_jefe=True)
+            return
+
+        self.indice_pregunta += 1
+        if self.indice_pregunta >= len(self.preguntas_ronda):
+            if self.ronda_actual == 1:
+                self._lanzar_minijuego(1)
+            else:
+                self._intro_jefe()
         else:
-            self._mostrar_resultado()
+            self._pantalla_pregunta()
 
-    def _mostrar_resultado(self):
-        for w in self.frame_opciones.winfo_children():
-            w.pack_forget()
-        self.contador.config(text="Finalizado")
-        total = len(self.preguntas)
-        self.lbl_pregunta.config(
-            text=f"Puntuación: {self.aciertos} / {total}"
-        )
-        self.lbl_feedback.config(
-            text=f"{round(self.aciertos / total * 100)}% de aciertos", fg=ACCENT
-        )
-        self.lbl_ayuda.config(
-            text=(
-                "Para un control total, podríamos programar un cron (o una "
-                "tarea de inicio) que lanzara este programa cada vez que se "
-                "enciende el portátil, de modo que no se pudiera usar el "
-                "equipo sin pasar por el quiz.\n"
-                "No lo hacemos porque no es necesario para la explicación."
-            ),
-            justify="center",
-        )
-        self.btn_siguiente.config(text="Salir", state="normal",
-                                  command=self._salir_libre)
+    # --------------------------------------------------------- preguntas
 
-    # -- bloqueo global (Nivel 2) ----------------------------------------
+    def _pantalla_pregunta(self, es_jefe=False):
+        self.es_jefe = es_jefe
+        if es_jefe:
+            pregunta = self.jefe[self.jefe_idx]
+        else:
+            pregunta = self.preguntas_ronda[self.indice_pregunta]
+
+        self.pregunta_actual = pregunta
+        self.respondida = False
+        self.bloqueadas = set()
+        self.seleccion = tk.IntVar(value=-1)
+        self.opciones = []
+
+        f = self._nueva()
+        acento = T.BAD if es_jefe else T.ACCENT
+
+        if es_jefe:
+            cabecera = (f"JEFE FINAL  ·  pregunta {self.jefe_idx + 1} "
+                        f"de {PREGUNTAS_JEFE}")
+        else:
+            cabecera = (f"RONDA {self.ronda_actual}  ·  pregunta "
+                        f"{self.indice_pregunta + 1} de {PREGUNTAS_POR_RONDA}")
+        self._texto(f, cabecera, 15, acento, True, pady=(22, 2))
+
+        self._texto(
+            f,
+            f"Comodines: {self.comodines}    ·    Aciertos: {self.aciertos}"
+            f"    ·    Fallos: {self.fallos}",
+            12, T.MUTED, False, pady=(0, 10),
+        )
+        self._texto(f, pregunta.get("categoria", ""), 12, T.MUTED, True, pady=0)
+
+        self._texto(f, pregunta["pregunta"], 26, T.FG, True, pady=(10, 22))
+
+        marco = tk.Frame(f, bg=T.BG)
+        marco.pack()
+        for indice, opcion in enumerate(pregunta["opciones"]):
+            boton = tk.Radiobutton(
+                marco, text=opcion, variable=self.seleccion, value=indice,
+                font=T.ui(17), bg=T.CARD, fg=T.FG, selectcolor="#2b3550",
+                activebackground=T.CARD, activeforeground=T.FG,
+                indicatoron=False, anchor="w", justify="left",
+                padx=20, pady=11, width=64, wraplength=760,
+                relief="flat", highlightthickness=0,
+                command=self._on_seleccion,
+            )
+            boton.pack(pady=5, fill="x")
+            self.opciones.append(boton)
+
+        self.feedback = tk.Label(
+            f, text="", font=T.ui(15, True), bg=T.BG, fg=acento,
+            wraplength=1040, justify="center",
+        )
+        self.feedback.pack(pady=14)
+
+        self.boton_accion = self._boton(
+            f, "RESPONDER", self._comprobar, acento
+        )
+        self.boton_accion.config(state="disabled")
+        self.boton_accion.pack(pady=(0, 10))
+
+        self._mostrar(f)
+
+    def _on_seleccion(self):
+        if not self.respondida:
+            self.boton_accion.config(state="normal")
+
+    def _comprobar(self):
+        if self.respondida or self.seleccion.get() == -1:
+            return
+        self.respondida = True
+        elegida = self.seleccion.get()
+        correcta = self.pregunta_actual["correcta"]
+
+        for boton in self.opciones:
+            boton.config(state="disabled")
+
+        if elegida == correcta:
+            self.opciones[correcta].config(bg=T.OK, fg="white")
+            if self.es_jefe:
+                self.aciertos_jefe += 1
+            else:
+                self.aciertos += 1
+            self.feedback.config(text="✓ ¡Correcto!", fg=T.OK)
+            self.boton_accion.config(
+                text="SIGUIENTE", state="normal", command=self._avanzar
+            )
+            return
+
+        self.opciones[elegida].config(bg=T.BAD, fg="white")
+        self.fallos += 1
+        self.comprobando_fallo = elegida
+
+        if self.primer_fallo:
+            self.primer_fallo = False
+            self._consola(f"usuario: {self.usuario}")
+            self._reporte(
+                "PRIMER FALLO", f"usuario: {self.usuario}",
+                f"Te hemos identificado, {self.usuario}.\n"
+                f"La próxima vez que falles habrá consecuencias.",
+                color=T.WARN, destacado=self.usuario,
+                continuar=self._resolver_fallo,
+            )
+        elif self.es_jefe:
+            self._resolver_fallo()
+        else:
+            nombre, reporte = self.castigos.castigo_aleatorio()
+            self._reporte(
+                f"CASTIGO · {nombre.upper()}", reporte, None,
+                color=T.BAD, continuar=self._resolver_fallo,
+            )
+
+    def _resolver_fallo(self):
+        self.bloqueadas.add(self.comprobando_fallo)
+        pregunta = self.pregunta_actual
+        correcta = pregunta["correcta"]
+
+        if self.comodines > 0:
+            self.comodines -= 1
+            self.comodines_usados += 1
+            for indice, boton in enumerate(self.opciones):
+                if indice in self.bloqueadas:
+                    boton.config(state="disabled", bg=T.CARD, fg=T.MUTED)
+                else:
+                    boton.config(state="normal", bg=T.CARD, fg=T.FG)
+            self.seleccion.set(-1)
+            self.respondida = False
+            self.boton_accion.config(
+                text="RESPONDER", state="disabled", command=self._comprobar
+            )
+            self.feedback.config(
+                text=f"Comodín gastado. Otra oportunidad. Quedan {self.comodines}.",
+                fg=T.WARN,
+            )
+            return
+
+        self.opciones[correcta].config(bg=T.OK, fg="white")
+        self.feedback.config(
+            text=f"✗ Incorrecto. La respuesta era: {pregunta['opciones'][correcta]}",
+            fg=T.BAD,
+        )
+        self.boton_accion.config(
+            text="SIGUIENTE", state="normal", command=self._avanzar
+        )
+        self._consola(
+            f"[fallo] pregunta {pregunta['pregunta']!r} "
+            f"-> correcta: {pregunta['opciones'][correcta]!r}"
+        )
+
+    def _area_texto(self, padre, texto, color=T.FG, alto=8):
+        marco = tk.Frame(padre, bg="#0b0e14")
+        barra = tk.Scrollbar(marco, orient="vertical")
+        barra.pack(side="right", fill="y")
+        area = tk.Text(
+            marco, width=86, height=alto, font=T.mono(11), bg="#0b0e14",
+            fg=color, relief="flat", padx=14, pady=10, wrap="word",
+            highlightthickness=0, yscrollcommand=barra.set,
+        )
+        area.insert("1.0", texto)
+        area.config(state="disabled")
+        area.pack(side="left", fill="both", expand=True)
+        barra.config(command=area.yview)
+        return marco
+
+    def _reporte(self, titulo, texto, subtitulo, continuar, color=T.BAD,
+                 destacado=None):
+        if self.pantalla is None:
+            continuar()
+            return
+
+        fondo = tk.Frame(self.pantalla, bg="#05070c")
+        fondo.place(relx=0, rely=0, relwidth=1, relheight=1)
+
+        caja = tk.Frame(fondo, bg=T.PANEL, highlightbackground=color,
+                        highlightthickness=2)
+        caja.place(relx=0.5, rely=0.5, anchor="center")
+
+        tk.Label(caja, text=titulo, font=T.ui(20, True), bg=T.PANEL,
+                 fg=color).pack(padx=44, pady=(26, 6))
+        if destacado:
+            tk.Label(caja, text=destacado, font=T.ui(36, True), bg=T.PANEL,
+                     fg=color).pack(pady=(0, 10))
+        if subtitulo:
+            tk.Label(caja, text=subtitulo, font=T.ui(12), bg=T.PANEL,
+                     fg=T.MUTED).pack(pady=(0, 10))
+
+        alto = min(18, max(5, texto.count("\n") + 2))
+        self._area_texto(caja, texto, T.FG, alto).pack(padx=30, pady=(6, 18))
+
+        def cerrar():
+            try:
+                fondo.destroy()
+            except Exception:
+                pass
+            continuar()
+
+        self._boton(caja, "CONTINUAR", cerrar, color).pack(pady=(0, 24))
+
+    # ---------------------------------------------------------- jefe final
+
+    def _intro_jefe(self):
+        f = self._nueva()
+        self._texto(f, "JEFE FINAL", 46, T.BAD, True, pady=(100, 12))
+        self._texto(
+            f, f"{PREGUNTAS_JEFE} preguntas. Necesitas "
+               f"{ACIERTOS_MINIMOS_JEFE} aciertos.",
+            20, T.FG, True, pady=(0, 18),
+        )
+        self._texto(
+            f,
+            f"Con {ACIERTOS_MINIMOS_JEFE - 1} aciertos o menos se borrará un "
+            "archivo de la zona de castigo.\n"
+            f"Te quedan {self.comodines} comodín(es).",
+            14, T.WARN, False, pady=(0, 34),
+        )
+        self._boton(
+            f, "EMPEZAR EL JEFE FINAL",
+            lambda: self._pantalla_pregunta(es_jefe=True),
+            T.BAD,
+        ).pack()
+        self._mostrar(f)
+
+    def _veredicto_jefe(self):
+        superado = self.aciertos_jefe >= ACIERTOS_MINIMOS_JEFE
+        if superado:
+            self._consola(
+                f"[jefe] {self.aciertos_jefe}/{PREGUNTAS_JEFE} -> superado"
+            )
+            self._pantalla_final(None)
+            return
+
+        self._consola(
+            f"[jefe] {self.aciertos_jefe}/{PREGUNTAS_JEFE} -> castigo final"
+        )
+        _, reporte = self.castigos.borrar_archivo()
+        self._pantalla_final(reporte)
+
+    # -------------------------------------------------------------- final
+
+    def _pantalla_final(self, borrado):
+        f = self._nueva()
+        if borrado:
+            self._texto(f, "HAS PERDIDO", 46, T.BAD, True, pady=(60, 6))
+            self._texto(
+                f,
+                f"{self.aciertos_jefe}/{PREGUNTAS_JEFE} en el jefe final. "
+                "Hacían falta 4.",
+                16, T.FG, False, pady=(0, 18),
+            )
+        else:
+            self._texto(f, "HAS SOBREVIVIDO", 46, T.OK, True, pady=(60, 6))
+            self._texto(
+                f,
+                f"{self.aciertos_jefe}/{PREGUNTAS_JEFE} en el jefe final. "
+                "Ningún archivo ha sido borrado.",
+                16, T.FG, False, pady=(0, 18),
+            )
+
+        resumen = (
+            f"Jugador: {self.usuario}\n"
+            f"Rondas: {self.aciertos}/{PREGUNTAS_POR_RONDA * 2} aciertos   ·   "
+            f"{self.fallos} fallos\n"
+            f"Comodines usados: {self.comodines_usados}   ·   "
+            f"quedan {self.comodines}\n"
+            f"Jefe final: {self.aciertos_jefe}/{PREGUNTAS_JEFE}"
+        )
+        self._texto(f, resumen, 15, T.FG, False, pady=(0, 16))
+
+        if borrado:
+            self._area_texto(f, borrado, T.BAD, 6).pack(pady=6)
+
+        self._boton(f, "SALIR", self._salir, T.BAD if borrado else T.OK).pack(
+            pady=24
+        )
+        self._mostrar(f)
+
+    # --------------------------------------------------------- bloqueos
+
     def _activar_bloqueo_global(self):
         try:
             keyboard.block_key("left windows")
             keyboard.block_key("right windows")
-            # Suprime a nivel global (no solo con foco) los atajos de
-            # cambio de ventana y de menú Inicio que la ventana no puede
-            # interceptar por sí sola.
             for combo in ("alt+tab", "alt+shift+tab", "ctrl+esc",
                           "alt+esc", "ctrl+alt+tab"):
                 keyboard.add_hotkey(combo, lambda: None, suppress=True)
             self._bloqueo_global_activo = True
-        except Exception as e:
-            # Normalmente por falta de permisos de administrador.
+        except Exception as error:
             messagebox.showinfo(
                 "Bloqueo global desactivado",
                 "No se pudo activar el bloqueo global de teclas "
-                f"(probablemente falta ejecutar como administrador).\n\n"
-                f"El quiz sigue funcionando con el bloqueo de ventana.\n\n"
-                f"Detalle: {e}",
+                f"(puede faltar ejecutar como administrador).\n\n{error}",
             )
             self._bloqueo_global_activo = False
 
     def _desactivar_bloqueo_global(self):
-        # Se llama SIEMPRE al salir para no dejar teclas colgadas.
         if self._bloqueo_global_activo:
             try:
                 keyboard.unhook_all()
@@ -363,21 +657,35 @@ class QuizKiosco:
                 pass
             self._bloqueo_global_activo = False
 
-    # -- salida ----------------------------------------------------------
-    def _recuperar_foco(self, _event=None):
-        # Vuelve a traer la ventana al frente Y recupera el teclado.
-        # attributes(-topmost) solo la pone delante; para que el foco
-        # vuelva hacen falta lift() + focus_force().
-        def _traer():
-            self.root.attributes("-topmost", True)
-            self.root.lift()
-            self.root.focus_force()
-        self.root.after(100, _traer)
+    def _recuperar_foco(self, _evento=None):
+        def traer():
+            try:
+                self.root.attributes("-topmost", True)
+                self.root.lift()
+                self.root.focus_force()
+            except Exception:
+                pass
 
-    def _salir_libre(self):
+        self.root.after(100, traer)
+
+    def _salida_emergencia(self, _evento=None):
+        ahora = time.perf_counter()
+        self._f12 = [marca for marca in self._f12 if ahora - marca < 2.0]
+        self._f12.append(ahora)
+        if len(self._f12) >= 3:
+            self._consola("[quiz] salida de emergencia (F12 x3)")
+            self._salir()
+
+    # ---------------------------------------------------------- salida
+
+    def _salir(self):
         self._desactivar_bloqueo_global()
         self.bloqueo_registro.restaurar()
-        self.root.attributes("-fullscreen", False)
+        try:
+            self.root.attributes("-fullscreen", False)
+            self.root.attributes("-topmost", False)
+        except Exception:
+            pass
         self.root.destroy()
 
 
@@ -416,11 +724,10 @@ def cargar_preguntas():
 def main():
     preguntas = cargar_preguntas()
     root = tk.Tk()
-    app = QuizKiosco(root, preguntas)
+    app = Aplicacion(root, preguntas)
     try:
         root.mainloop()
     finally:
-        # Red de seguridad: si el programa peta a mitad, desbloquea igual.
         app._desactivar_bloqueo_global()
         app.bloqueo_registro.restaurar()
 
