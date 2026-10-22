@@ -336,17 +336,18 @@ class ParcelPanic(Minijuego):
             if abs(x - paquete["x"]) <= 46 and abs(y - paquete["y"]) <= 46:
                 if paquete["tipo"] == "bomba":
                     self.puntos = max(0, self.puntos - 2)
-                    self.canvas.create_text(
-                        paquete["x"], paquete["y"] - 58, text="-2",
-                        fill=BAD, font=ui(20, True),
-                    )
+                    aviso, color = "-2", BAD
                 else:
                     ganancia = 2 if paquete["tipo"] == "fragil" else 1
                     self.puntos += ganancia
-                    self.canvas.create_text(
-                        paquete["x"], paquete["y"] - 58, text=f"+{ganancia}",
-                        fill=OK, font=ui(20, True),
-                    )
+                    aviso, color = f"+{ganancia}", OK
+                flotante = self.canvas.create_text(
+                    paquete["x"], paquete["y"] - 58, text=aviso,
+                    fill=color, font=ui(20, True),
+                )
+                self._temporizar(
+                    550, lambda i=flotante: self.canvas.delete(i)
+                )
                 self._quitar(paquete)
                 return
 
@@ -416,9 +417,12 @@ class FruitNinja(Minijuego):
                 else:
                     self.puntos += 1
                     aviso, color = "+1", OK
-                self.canvas.create_text(
+                flotante = self.canvas.create_text(
                     fruta["x"], fruta["y"] - 34, text=aviso,
                     fill=color, font=ui(20, True),
+                )
+                self._temporizar(
+                    450, lambda i=flotante: self.canvas.delete(i)
                 )
                 self.canvas.delete(fruta["id"])
                 self.canvas.delete(fruta["marca"])

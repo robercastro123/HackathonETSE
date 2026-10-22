@@ -5,14 +5,15 @@ Pantalla completa sin salida manual.
 
 Flujo de la partida:
 
-    minijuego -> 5 preguntas -> minijuego -> 5 preguntas -> jefe final (6)
+    minijuego -> 3 preguntas -> jefe final (3, hacen falta 2)
 
-- Cada minijuego da comodines según el rango:
+- El minijuego da comodines según el rango:
       alto  2 | medio  1 | bajo  0
-  Un comodín se gasta al fallar y deja volver a intentar la misma pregunta.
-- El primer fallo de la partida imprime el nombre del jugador por pantalla.
-- El resto de fallos de las rondas aplican un castigo aleatorio.
-- En el jefe final hacen falta 4 aciertos de 6; con 3 o menos se borra un
+  Un comodín se gasta al fallar: evita el castigo y deja reintentar.
+- El primer fallo de la partida imprime el nombre del usuario del sistema
+  por pantalla.
+- Los fallos posteriores SIN comodín aplican un castigo aleatorio.
+- En el jefe final hacen falta 2 aciertos de 3; con 1 o menos se borra un
   archivo.
 
 Los castigos actúan SOLO dentro de ``zona_castigo`` (ver castigos.py).
@@ -28,7 +29,7 @@ from pathlib import Path
 from tkinter import messagebox
 
 import estilo as T
-from castigos import Castigos
+from castigos import Castigos, identidad_sistema
 from minijuegos import MINIJUEGOS
 
 # ----------------------------------------------------------------------
@@ -38,9 +39,9 @@ from minijuegos import MINIJUEGOS
 BLOQUEO_GLOBAL = True            # Nivel 2: tecla Windows y Alt+Tab
 BLOQUEO_REGISTRO = True          # Nivel 3: Task Manager y Win+L (solo Windows)
 
-PREGUNTAS_POR_RONDA = 5
-PREGUNTAS_JEFE = 6
-ACIERTOS_MINIMOS_JEFE = 4
+PREGUNTAS_POR_RONDA = 3
+PREGUNTAS_JEFE = 3
+ACIERTOS_MINIMOS_JEFE = 2
 NEUTRALIZAR_ATAJOS = ("<Alt-F4>", "<Control-w>", "<Control-q>",
                       "<Control-W>", "<Control-Q>", "<Alt-Tab>")
 
@@ -132,6 +133,7 @@ class Aplicacion:
         self.preguntas = preguntas
 
         self.usuario = "anónimo"
+        self.equipo = ""
         self.castigos = None
         self.registro = []
         self.pantalla = None
@@ -224,37 +226,25 @@ class Aplicacion:
         f = self._nueva()
         self._texto(f, "QUIZ HACKATHON", 44, T.ACCENT, True, pady=(70, 4))
         self._texto(
-            f, "10 preguntas · 2 minijuegos · 1 jefe final",
+            f, "1 minijuego · 3 preguntas · jefe final de 3",
             16, T.MUTED, False, pady=(0, 30),
         )
         self._texto(
             f,
-            "Cada fallo tiene consecuencias.\n"
-            "Los castigos solo afectan a la carpeta zona_castigo del proyecto.",
-            14, T.WARN, False, pady=(0, 26),
+            "Cada fallo sin comodín tiene consecuencias.\n"
+            "El sistema ya sabe quién está jugando.",
+            14, T.WARN, False, pady=(0, 34),
         )
-
-        caja = tk.Frame(f, bg=T.PANEL, highlightbackground=T.ACCENT,
-                        highlightthickness=1)
-        caja.pack(pady=10)
-        tk.Label(caja, text="¿Cómo te llamas?", font=T.ui(15), bg=T.PANEL,
-                 fg=T.FG).pack(padx=50, pady=(24, 10))
-        self.entrada = tk.Entry(
-            caja, font=T.ui(20), bg="#0b0e14", fg=T.FG,
-            insertbackground=T.FG, relief="flat", justify="center", width=24,
-        )
-        self.entrada.pack(padx=50, pady=(0, 22))
-        self.entrada.bind("<Return>", lambda evento: self._empezar_partida())
-        self.entrada.focus_set()
 
         self._boton(f, "EMPEZAR", self._empezar_partida).pack(pady=26)
         self._mostrar(f)
 
     def _empezar_partida(self):
-        usuario = self.entrada.get().strip()
-        self.usuario = usuario or "anónimo"
+        sistema, equipo = identidad_sistema()
+        self.usuario = sistema
+        self.equipo = equipo
 
-        necesarias = PREGUNTAS_POR_RONDA * 2 + PREGUNTAS_JEFE
+        necesarias = PREGUNTAS_POR_RONDA + PREGUNTAS_JEFE
         if len(self.preguntas) < necesarias:
             raise SystemExit(
                 f"Faltan preguntas: hay {len(self.preguntas)} y hacen falta "
@@ -262,29 +252,25 @@ class Aplicacion:
             )
         random.shuffle(self.preguntas)
         self.ronda_1 = self.preguntas[:PREGUNTAS_POR_RONDA]
-        self.ronda_2 = self.preguntas[PREGUNTAS_POR_RONDA:PREGUNTAS_POR_RONDA * 2]
-        self.jefe = self.preguntas[PREGUNTAS_POR_RONDA * 2:necesarias]
+        self.jefe = self.preguntas[PREGUNTAS_POR_RONDA:necesarias]
 
-        self.minijuegos = random.sample(list(MINIJUEGOS), 2)
+        self.minijuegos = random.sample(list(MINIJUEGOS), 1)
         self.castigos = Castigos(self.usuario, log=self._consola)
         self._consola("[quiz] ------------------------------------------")
-        self._consola(f"[quiz] jugador: {self.usuario}")
+        self._consola(f"[quiz] usuario del sistema: {self.usuario}")
+        self._consola(f"[quiz] equipo: {self.equipo}")
         self._consola(f"[quiz] zona de castigo: {self.castigos.base}")
         self._consola("[quiz] ------------------------------------------")
 
-        self._lanzar_minijuego(0)
+        self._lanzar_minijuego()
 
     # --------------------------------------------------------- minijuegos
 
-    def _lanzar_minijuego(self, indice):
-        self.minijuego_idx = indice
-        clase = self.minijuegos[indice]
+    def _lanzar_minijuego(self):
+        clase = self.minijuegos[0]
 
         f = self._nueva()
-        self._texto(
-            f, f"MINIJUEGO {indice + 1} DE 2", 14, T.MUTED, True,
-            pady=(70, 6),
-        )
+        self._texto(f, "MINIJUEGO", 14, T.MUTED, True, pady=(70, 6))
         self._texto(f, clase.nombre, 42, T.ACCENT, True, pady=(0, 10))
         self._texto(f, clase.ayuda, 16, T.FG, False, pady=(0, 26))
         self._texto(
@@ -315,23 +301,21 @@ class Aplicacion:
         )
         self._texto(
             f,
-            "Un comodín se gasta al fallar y te deja volver a intentarlo.",
+            "Un comodín se gasta al fallar, evita el castigo y te deja "
+            "volver a intentarlo.",
             13, T.MUTED, False, pady=(0, 30),
         )
         self._boton(f, "CONTINUAR", self._tras_minijuego).pack()
         self._mostrar(f)
 
     def _tras_minijuego(self):
-        if self.minijuego_idx == 0:
-            self._empezar_ronda(1)
-        else:
-            self._intro_jefe()
+        self._empezar_ronda(1)
 
     # ------------------------------------------------------------ rondas
 
     def _empezar_ronda(self, numero):
         self.ronda_actual = numero
-        self.preguntas_ronda = self.ronda_1 if numero == 1 else self.ronda_2
+        self.preguntas_ronda = self.ronda_1
         self.indice_pregunta = 0
         self._pantalla_pregunta()
 
@@ -346,10 +330,7 @@ class Aplicacion:
 
         self.indice_pregunta += 1
         if self.indice_pregunta >= len(self.preguntas_ronda):
-            if self.ronda_actual == 1:
-                self._lanzar_minijuego(1)
-            else:
-                self._intro_jefe()
+            self._intro_jefe()
         else:
             self._pantalla_pregunta()
 
@@ -375,15 +356,12 @@ class Aplicacion:
             cabecera = (f"JEFE FINAL  ·  pregunta {self.jefe_idx + 1} "
                         f"de {PREGUNTAS_JEFE}")
         else:
-            cabecera = (f"RONDA {self.ronda_actual}  ·  pregunta "
-                        f"{self.indice_pregunta + 1} de {PREGUNTAS_POR_RONDA}")
+            cabecera = (f"PREGUNTAS  ·  {self.indice_pregunta + 1} de "
+                        f"{PREGUNTAS_POR_RONDA}")
         self._texto(f, cabecera, 15, acento, True, pady=(22, 2))
 
-        self._texto(
-            f,
-            f"Comodines: {self.comodines}    ·    Aciertos: {self.aciertos}"
-            f"    ·    Fallos: {self.fallos}",
-            12, T.MUTED, False, pady=(0, 10),
+        self.lbl_stats = self._texto(
+            f, self._texto_stats(), 12, T.MUTED, False, pady=(0, 10),
         )
         self._texto(f, pregunta.get("categoria", ""), 12, T.MUTED, True, pady=0)
 
@@ -422,6 +400,21 @@ class Aplicacion:
         if not self.respondida:
             self.boton_accion.config(state="normal")
 
+    def _texto_stats(self):
+        return (
+            f"Comodines: {self.comodines}    ·    Aciertos: {self.aciertos}"
+            f"    ·    Fallos: {self.fallos}"
+        )
+
+    def _actualizar_stats(self):
+        etiqueta = getattr(self, "lbl_stats", None)
+        if etiqueta is None:
+            return
+        try:
+            etiqueta.config(text=self._texto_stats())
+        except Exception:
+            pass
+
     def _comprobar(self):
         if self.respondida or self.seleccion.get() == -1:
             return
@@ -438,6 +431,7 @@ class Aplicacion:
                 self.aciertos_jefe += 1
             else:
                 self.aciertos += 1
+            self._actualizar_stats()
             self.feedback.config(text="✓ ¡Correcto!", fg=T.OK)
             self.boton_accion.config(
                 text="SIGUIENTE", state="normal", command=self._avanzar
@@ -447,50 +441,71 @@ class Aplicacion:
         self.opciones[elegida].config(bg=T.BAD, fg="white")
         self.fallos += 1
         self.comprobando_fallo = elegida
+        self._actualizar_stats()
 
         if self.primer_fallo:
             self.primer_fallo = False
-            self._consola(f"usuario: {self.usuario}")
-            self._reporte(
-                "PRIMER FALLO", f"usuario: {self.usuario}",
-                f"Te hemos identificado, {self.usuario}.\n"
-                f"La próxima vez que falles habrá consecuencias.",
-                color=T.WARN, destacado=self.usuario,
-                continuar=self._resolver_fallo,
+            sistema, equipo = self.castigos.identidad()
+            self._consola("=" * 46)
+            self._consola(f"  usuario del sistema: {sistema}")
+            self._consola(f"  equipo: {equipo}")
+            self._consola("=" * 46)
+            aviso = (
+                "Te quedan comodines: este fallo no tiene castigo."
+                if self.comodines
+                else "La próxima vez que falles sin comodín habrá consecuencias."
             )
-        elif self.es_jefe:
-            self._resolver_fallo()
+            self._reporte(
+                "PRIMER FALLO",
+                f"usuario del sistema: {sistema}\n"
+                f"equipo: {equipo}",
+                f"Te hemos identificado, {sistema}.\n{aviso}",
+                color=T.WARN, destacado=sistema,
+                continuar=lambda: self._decidir_fallo(primer=True),
+            )
         else:
-            nombre, reporte = self.castigos.castigo_aleatorio()
-            self._reporte(
-                f"CASTIGO · {nombre.upper()}", reporte, None,
-                color=T.BAD, continuar=self._resolver_fallo,
-            )
+            self._decidir_fallo()
 
-    def _resolver_fallo(self):
+    def _decidir_fallo(self, primer=False):
+        """El comodín se gasta antes de decidir el castigo: te libra de él."""
+        if self.comodines > 0:
+            self._usar_comodin()
+            return
+        if primer or self.es_jefe:
+            self._revelar()
+            return
+        nombre, reporte = self.castigos.castigo_aleatorio()
+        self._reporte(
+            f"CASTIGO · {nombre.upper()}", reporte, None,
+            color=T.BAD, continuar=self._revelar,
+        )
+
+    def _usar_comodin(self):
+        self.comodines -= 1
+        self.comodines_usados += 1
         self.bloqueadas.add(self.comprobando_fallo)
+        for indice, boton in enumerate(self.opciones):
+            if indice in self.bloqueadas:
+                boton.config(state="disabled", bg=T.CARD, fg=T.MUTED)
+            else:
+                boton.config(state="normal", bg=T.CARD, fg=T.FG)
+        self.seleccion.set(-1)
+        self.respondida = False
+        self.boton_accion.config(
+            text="RESPONDER", state="disabled", command=self._comprobar
+        )
+        self.feedback.config(
+            text=(
+                "Comodín gastado: te libras del castigo. "
+                f"Otra oportunidad, quedan {self.comodines}."
+            ),
+            fg=T.WARN,
+        )
+        self._actualizar_stats()
+
+    def _revelar(self):
         pregunta = self.pregunta_actual
         correcta = pregunta["correcta"]
-
-        if self.comodines > 0:
-            self.comodines -= 1
-            self.comodines_usados += 1
-            for indice, boton in enumerate(self.opciones):
-                if indice in self.bloqueadas:
-                    boton.config(state="disabled", bg=T.CARD, fg=T.MUTED)
-                else:
-                    boton.config(state="normal", bg=T.CARD, fg=T.FG)
-            self.seleccion.set(-1)
-            self.respondida = False
-            self.boton_accion.config(
-                text="RESPONDER", state="disabled", command=self._comprobar
-            )
-            self.feedback.config(
-                text=f"Comodín gastado. Otra oportunidad. Quedan {self.comodines}.",
-                fg=T.WARN,
-            )
-            return
-
         self.opciones[correcta].config(bg=T.OK, fg="white")
         self.feedback.config(
             text=f"✗ Incorrecto. La respuesta era: {pregunta['opciones'][correcta]}",
@@ -565,7 +580,7 @@ class Aplicacion:
         )
         self._texto(
             f,
-            f"Con {ACIERTOS_MINIMOS_JEFE - 1} aciertos o menos se borrará un "
+            f"Con menos de {ACIERTOS_MINIMOS_JEFE} aciertos se borrará un "
             "archivo de la zona de castigo.\n"
             f"Te quedan {self.comodines} comodín(es).",
             14, T.WARN, False, pady=(0, 34),
@@ -601,7 +616,7 @@ class Aplicacion:
             self._texto(
                 f,
                 f"{self.aciertos_jefe}/{PREGUNTAS_JEFE} en el jefe final. "
-                "Hacían falta 4.",
+                f"Hacían falta {ACIERTOS_MINIMOS_JEFE}.",
                 16, T.FG, False, pady=(0, 18),
             )
         else:
@@ -614,8 +629,8 @@ class Aplicacion:
             )
 
         resumen = (
-            f"Jugador: {self.usuario}\n"
-            f"Rondas: {self.aciertos}/{PREGUNTAS_POR_RONDA * 2} aciertos   ·   "
+            f"Usuario del sistema: {self.usuario}@{self.equipo}\n"
+            f"Rondas: {self.aciertos}/{PREGUNTAS_POR_RONDA} aciertos   ·   "
             f"{self.fallos} fallos\n"
             f"Comodines usados: {self.comodines_usados}   ·   "
             f"quedan {self.comodines}\n"

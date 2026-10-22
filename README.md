@@ -18,12 +18,13 @@ el quiz funciona igual, solo con los bloqueos de ventana.
 ## Cómo se juega
 
 ```
-minijuego -> 5 preguntas -> minijuego -> 5 preguntas -> jefe final (6)
+minijuego -> 3 preguntas -> jefe final (3 preguntas, hacen falta 2)
 ```
 
-Al empezar se pide un nombre de usuario. Se usan 16 preguntas al azar de
-`preguntas.json` (10 de las rondas y 6 del jefe). Si añades más filas al CSV,
-se mezclan automáticamente; hacen falta al menos 16.
+Al empezar se detecta automáticamente el usuario del sistema (no se pregunta
+nada). Se usan 6 preguntas al azar de `preguntas.json` (3 de la ronda y 3 del
+jefe). Si añades más filas al CSV, se mezclan automáticamente; hacen falta al
+menos 6.
 
 ### Minijuegos
 
@@ -44,30 +45,59 @@ Cada uno dura entre 20 y 22 segundos y da comodines según el rango:
 | Don't Touch the Spikes | `espacio` | huecos pasados |
 | Jungle Run | `espacio` | troncos esquivados |
 
-Los dos minijuegos de cada partida se eligen al azar y no se repiten.
+El minijuego de cada partida se elige al azar entre los seis.
 
 ### Comodines
 
-Se acumulan entre minijuegos. Al fallar una pregunta, si queda algún comodín,
-se gasta uno y se puede volver a intentar la misma pregunta (la opción fallada
-queda bloqueada). Sin comodines se revela la respuesta correcta.
+Los comodines del minijuego se usan tanto en las 3 preguntas como en el jefe
+final. Al fallar una pregunta, si queda algún comodín,
+se gasta uno automáticamente: **te libras del castigo** y puedes volver a
+intentar la misma pregunta (la opción fallada queda bloqueada). Sin comodines
+se aplica el castigo y se revela la respuesta correcta.
 
 ### Fallos
 
-- **Primer fallo de la partida:** se imprime el nombre de usuario por pantalla
-  (y en la consola). No hay castigo todavía.
-- **Resto de fallos de las rondas:** se aplica un castigo aleatorio:
+- **Primer fallo de la partida:** se imprime por pantalla el nombre del usuario
+  real del sistema y el nombre del equipo, y también en la consola. No hay
+  castigo todavía. Si te queda algún comodín, se gasta y vuelves a intentarlo.
+- **Resto de fallos de la ronda:** si **no** te queda ningún comodín se
+  aplica un castigo aleatorio. Se usa una bolsa barajada: en cinco castigos
+  salen los cinco tipos.
   - mover un archivo,
   - modificar un archivo,
-  - listar los puertos abiertos de `127.0.0.1`,
+  - listar los puertos abiertos de `127.0.0.1` (35 puertos habituales),
   - mostrar IP local, IP pública y geolocalización (si hay red),
-  - dibujar el mapa de archivos de la zona de castigo.
+  - dibujar el mapa de archivos del sistema.
 - **Fallos en el jefe final:** no aplican castigos sueltos; cuentan para el
   veredicto.
 
+### Inspección del sistema
+
+Los puertos, la IP y la geolocalización se consultan de verdad en el equipo.
+El mapa de archivos recorre una carpeta **en modo solo lectura**:
+
+```python
+DIRECTORIO_MAPA = Path.home()   # castigos.py
+```
+
+- Por defecto mapea tu carpeta personal, con 4 niveles de profundidad, un
+  máximo de 160 entradas y 14 por carpeta. Oculta las carpetas que empiezan
+  por punto y omite `node_modules`, `venv`, etc.
+- Con `Path("/")` mapea todo el disco (más lento y con avisos de permisos).
+- Si prefieres ver también los archivos ocultos:
+  `app.castigos.mapa_archivos(incluir_ocultos=True)`.
+
+Todo esto aparece **en una ventana dentro del quiz** (con barra de desplazamiento
+para los informes largos) y además se escribe en la consola.
+
+La geolocalización prueba `ipapi.co`, luego `ipwho.is` y, si falla todo, al
+menos saca la IP pública con `ipify`. Se cachea durante la partida. Sin
+conexión solo se muestra la IP local. Se puede desactivar con
+`PERMITIR_RED = False` en `castigos.py`.
+
 ### Jefe final
 
-6 preguntas. Con **4 aciertos o más** se supera. Con **3 o menos** se borra
+3 preguntas. Con **2 aciertos o más** se supera. Con **1 o menos** se borra
 un archivo de la zona de castigo.
 
 ## Zona de castigo

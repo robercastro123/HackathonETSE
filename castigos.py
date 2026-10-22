@@ -1,18 +1,22 @@
-"""Castigos del quiz.
+"""Castigos e inspección del sistema para el quiz.
 
-Todo lo que se mueve, se modifica o se borra ocurre dentro de
-``DIRECTORIO_CASTIGO``. Por defecto es una carpeta de pruebas llamada
-``zona_castigo`` que se crea sola al lado de este archivo.
+Dos zonas distintas:
 
-Si quieres que los castigos actúen sobre archivos de verdad, cambia
-``DIRECTORIO_CASTIGO`` por la carpeta que quieras (por ejemplo
-``Path.home() / "Escritorio"``). Aun así el módulo se niega a salir de esa
-carpeta y protege los archivos del propio proyecto.
+- ``DIRECTORIO_CASTIGO``: aquí SÍ se mueve, modifica y borra. Por defecto es
+  ``zona_castigo``, una carpeta de pruebas que se crea sola. Para que actúe
+  sobre archivos reales, cámbiala (por ejemplo ``Path.home() / "Escritorio"``).
+- ``DIRECTORIO_MAPA``: aquí solo se LEE, para dibujar el mapa de archivos.
+  Por defecto es tu carpeta personal; con ``Path("/")`` mapea todo el disco.
+
+Los puertos, la IP y la geolocalización se consultan de verdad en el equipo.
 """
 
 from __future__ import annotations
 
+import getpass
 import json
+import os
+import platform
 import random
 import shutil
 import socket
@@ -23,6 +27,9 @@ from pathlib import Path
 # ---------------------------------------------------------------- ajustes
 
 DIRECTORIO_CASTIGO = Path(__file__).resolve().parent / "zona_castigo"
+
+# Solo lectura: carpeta que se recorre para el "mapa de archivos".
+DIRECTORIO_MAPA = Path.home()
 
 # Sin conexión, la geolocalización se omite y solo se muestra la IP local.
 PERMITIR_RED = True
@@ -35,11 +42,21 @@ PROTEGIDOS = {
     ".git", "__pycache__", "zona_castigo",
 }
 
+# Carpetas que no aportan nada al mapa y lo harían eterno.
+RUIDO = {
+    ".git", "__pycache__", "node_modules", ".cache", ".venv", "venv",
+    ".mypy_cache", ".pytest_cache", "site-packages",
+}
+
 SERVICIOS = {
     21: "FTP", 22: "SSH", 23: "Telnet", 25: "SMTP", 53: "DNS",
-    80: "HTTP", 110: "POP3", 143: "IMAP", 443: "HTTPS", 445: "SMB",
-    3306: "MySQL", 3389: "RDP", 5432: "PostgreSQL", 5900: "VNC",
-    6379: "Redis", 8000: "HTTP-alt", 8080: "HTTP-alt", 8443: "HTTPS-alt",
+    80: "HTTP", 110: "POP3", 111: "rpcbind", 135: "MSRPC", 139: "NetBIOS",
+    143: "IMAP", 443: "HTTPS", 445: "SMB", 515: "LPD", 631: "IPP",
+    993: "IMAPS", 995: "POP3S", 1521: "Oracle", 2049: "NFS",
+    3000: "Node/Grafana", 3306: "MySQL", 3389: "RDP", 5000: "Flask/UPnP",
+    5432: "PostgreSQL", 5900: "VNC", 5985: "WinRM", 6379: "Redis",
+    8000: "HTTP-alt", 8080: "HTTP-alt", 8081: "HTTP-alt", 8443: "HTTPS-alt",
+    9090: "Prometheus", 9200: "Elasticsearch", 11211: "Memcached",
     27017: "MongoDB",
 }
 
@@ -118,14 +135,36 @@ def _dentro(base: Path, ruta: Path) -> bool:
         return False
 
 
+def identidad_sistema() -> tuple[str, str]:
+    """Usuario real del sistema y nombre del equipo."""
+    try:
+        usuario = getpass.getuser()
+    except Exception:
+        usuario = "desconocido"
+    try:
+        equipo = platform.node() or "desconocido"
+    except Exception:
+        equipo = "desconocido"
+    return usuario, equipo
+
+
 class Castigos:
     def __init__(self, usuario: str, base: Path | str | None = None,
+                 mapa_base: Path | str | None = None,
                  log=None, permitir_red: bool | None = None):
         self.usuario = usuario or "anónimo"
         self.base = Path(base) if base else DIRECTORIO_CASTIGO
+        self.mapa_base = Path(mapa_base) if mapa_base else DIRECTORIO_MAPA
         self.log = log or print
         self.permitir_red = PERMITIR_RED if permitir_red is None else permitir_red
+        self._cache_geo = None
+        self._geo_consultada = False
+        self._bolsa = []
         self._preparar()
+
+    def identidad(self) -> tuple[str, str]:
+        """Usuario real del sistema y nombre del equipo (para el primer fallo)."""
+        return identidad_sistema()
 
     # ------------------------------------------------------------ base
 
@@ -229,14 +268,61 @@ class Castigos:
             for puerto, servicio, esta in zip(SERVICIOS, SERVICIOS.values(), resultados)
             if esta
         ]
+        cabecera = (
+            f"[castigo] PUERTOS ABIERTOS EN 127.0.0.1  "
+            f"({len(SERVICIOS)} puertos comprobados)"
+        )
         if not abiertos:
             return self._publicar(
-                "[castigo] PUERTOS ABIERTOS EN 127.0.0.1\n"
-                "  (ninguno de los habituales respondió)"
+                cabecera + "\n  (ninguno de los habituales respondió)"
             )
-        return self._publicar(
-            "[castigo] PUERTOS ABIERTOS EN 127.0.0.1\n" + "\n".join(abiertos)
-        )
+        return self._publicar(cabecera + "\n" + "\n".join(abiertos))
+
+    def _pedir_json(self, url: str, timeout: float):
+        with urllib.request.urlopen(url, timeout=timeout) as respuesta:
+            return json.load(respuesta)
+
+    def _consultar_geo(self):
+        """Intenta varios proveedores; devuelve dict normalizado o None."""
+        try:
+            datos = self._pedir_json("https://ipapi.co/json/", 2.0)
+            if datos.get("ip"):
+                return {
+                    "ip": datos.get("ip"),
+                    "ciudad": datos.get("city"),
+                    "region": datos.get("region"),
+                    "pais": datos.get("country_name"),
+                    "org": datos.get("org"),
+                    "lat": datos.get("latitude"),
+                    "lon": datos.get("longitude"),
+                }
+        except Exception:
+            pass
+
+        try:
+            datos = self._pedir_json("https://ipwho.is/", 2.0)
+            if datos.get("success") and datos.get("ip"):
+                conexion = datos.get("connection") or {}
+                return {
+                    "ip": datos.get("ip"),
+                    "ciudad": datos.get("city"),
+                    "region": datos.get("region"),
+                    "pais": datos.get("country"),
+                    "org": conexion.get("isp") or conexion.get("org"),
+                    "lat": datos.get("latitude"),
+                    "lon": datos.get("longitude"),
+                }
+        except Exception:
+            pass
+
+        # Último recurso: al menos la IP pública, sin geolocalización.
+        try:
+            datos = self._pedir_json("https://api.ipify.org?format=json", 1.5)
+            if datos.get("ip"):
+                return {"ip": datos.get("ip")}
+        except Exception:
+            pass
+        return None
 
     def ip_y_geo(self) -> str:
         ip_local = "desconocida"
@@ -247,75 +333,157 @@ class Castigos:
         except OSError:
             pass
 
-        lineas = ["[castigo] DIRECCIÓN IP", f"  IP local : {ip_local}"]
+        try:
+            equipo = platform.node() or "desconocido"
+        except Exception:
+            equipo = "desconocido"
+
+        lineas = [
+            "[castigo] DIRECCIÓN IP",
+            f"  equipo   : {equipo}",
+            f"  IP local : {ip_local}",
+        ]
 
         if not self.permitir_red:
             lineas.append("  IP pública / geolocalización: desactivado")
             return self._publicar("\n".join(lineas))
 
-        datos = None
-        try:
-            with urllib.request.urlopen(
-                "https://ipapi.co/json/", timeout=2.5
-            ) as respuesta:
-                datos = json.load(respuesta)
-        except Exception:
-            datos = None
+        datos = self._cache_geo
+        if datos is None and not getattr(self, "_geo_consultada", False):
+            datos = self._consultar_geo()
+            self._cache_geo = datos
+            self._geo_consultada = True
 
         if not datos:
             lineas.append("  IP pública / geolocalización: sin conexión")
             return self._publicar("\n".join(lineas))
 
-        ciudad = datos.get("city") or "?"
-        region = datos.get("region") or "?"
-        pais = datos.get("country_name") or "?"
-        org = datos.get("org") or "?"
-        lat = datos.get("latitude")
-        lon = datos.get("longitude")
-
-        lineas.append(f"  IP pública: {datos.get('ip', '?')}")
-        lineas.append(f"  ubicación : {ciudad}, {region}, {pais}")
-        lineas.append(f"  operador  : {org}")
+        lineas.append(f"  IP pública: {datos.get('ip') or '?'}")
+        if datos.get("ciudad") or datos.get("pais"):
+            lineas.append(
+                "  ubicación : "
+                f"{datos.get('ciudad') or '?'}, {datos.get('region') or '?'}, "
+                f"{datos.get('pais') or '?'}"
+            )
+        if datos.get("org"):
+            lineas.append(f"  operador  : {datos['org']}")
+        lat, lon = datos.get("lat"), datos.get("lon")
         if lat is not None and lon is not None:
             lineas.append(f"  coordenadas: {lat}, {lon}")
             lineas.append(
-                f"  mapa: https://www.openstreetmap.org/?mlat={lat}&mlon={lon}#map=12/{lat}/{lon}"
+                f"  mapa: https://www.openstreetmap.org/?mlat={lat}&mlon={lon}"
+                f"#map=12/{lat}/{lon}"
             )
         return self._publicar("\n".join(lineas))
 
-    def mapa_archivos(self, maximo: int = 120) -> str:
-        lineas = [f"[castigo] MAPA DE {self.base}"]
-        contador = 0
+    def _listar(self, carpeta: Path, limite: int) -> list[Path]:
+        """Lista acotada: no se atasca en carpetas con miles de archivos."""
+        salida = []
+        try:
+            with os.scandir(carpeta) as entradas:
+                for entrada in entradas:
+                    salida.append(Path(entrada.path))
+                    if len(salida) >= limite:
+                        break
+        except OSError:
+            return []
+        return salida
 
-        def recorrer(carpeta: Path, prefijo: str):
-            nonlocal contador
-            try:
-                hijos = sorted(carpeta.iterdir(), key=lambda p: (p.is_file(), p.name.lower()))
-            except OSError:
+    @staticmethod
+    def _clave_orden(ruta: Path):
+        prioridad = {
+            "escritorio": 0, "desktop": 0,
+            "documentos": 1, "documents": 1,
+            "descargas": 2, "downloads": 2,
+            "imágenes": 3, "imagenes": 3, "pictures": 3,
+            "música": 4, "musica": 4, "music": 4,
+            "vídeos": 5, "videos": 5, "videos": 5,
+        }
+        try:
+            es_archivo = ruta.is_file()
+        except OSError:
+            es_archivo = True
+        return (
+            1 if es_archivo else 0,
+            prioridad.get(ruta.name.lower(), 20),
+            ruta.name.lower(),
+        )
+
+    def mapa_archivos(self, maximo: int = 160, profundidad: int = 4,
+                      por_carpeta: int = 14,
+                      incluir_ocultos: bool = False) -> str:
+        base = self.mapa_base
+        lineas = [
+            f"[castigo] MAPA DE ARCHIVOS · {base}",
+            "  (solo lectura)",
+        ]
+        contador = 0
+        truncado = False
+
+        def recorrer(carpeta: Path, prefijo: str, nivel: int):
+            nonlocal contador, truncado
+            if truncado:
                 return
-            for posicion, hijo in enumerate(hijos):
-                if contador >= maximo:
+            if nivel > profundidad:
+                lineas.append(f"{prefijo}... (profundidad máxima)")
+                return
+
+            hijos = self._listar(carpeta, maximo * 2)
+            if not incluir_ocultos:
+                hijos = [h for h in hijos if not h.name.startswith(".")]
+            if not hijos:
+                return
+            hijos.sort(key=self._clave_orden)
+
+            resto = max(0, len(hijos) - por_carpeta)
+            visibles = hijos[:por_carpeta]
+
+            for posicion, hijo in enumerate(visibles):
+                if truncado:
                     return
-                ultimo = posicion == len(hijos) - 1
+                if contador >= maximo:
+                    lineas.append(
+                        f"{prefijo}... (truncado en {maximo} entradas)"
+                    )
+                    truncado = True
+                    return
+                ultimo = posicion == len(visibles) - 1 and resto == 0
                 rama = "└── " if ultimo else "├── "
-                if hijo.is_dir():
+                try:
+                    es_dir = hijo.is_dir() and not hijo.is_symlink()
+                except OSError:
+                    es_dir = False
+
+                if es_dir:
+                    if hijo.name in RUIDO:
+                        lineas.append(f"{prefijo}{rama}{hijo.name}/  [omitido]")
+                        contador += 1
+                        continue
                     lineas.append(f"{prefijo}{rama}{hijo.name}/")
                     contador += 1
-                    recorrer(hijo, prefijo + ("    " if ultimo else "│   "))
+                    recorrer(
+                        hijo,
+                        prefijo + ("    " if ultimo else "│   "),
+                        nivel + 1,
+                    )
                 else:
                     try:
                         tam = hijo.stat().st_size
                     except OSError:
                         tam = 0
-                    lineas.append(f"{prefijo}{rama}{hijo.name}  ({tam} B)")
+                    enlace = " -> enlace" if hijo.is_symlink() else ""
+                    lineas.append(
+                        f"{prefijo}{rama}{hijo.name}  ({tam} B){enlace}"
+                    )
                     contador += 1
-                if contador >= maximo:
-                    lineas.append(f"{prefijo}    ... (lista truncada)")
-                    return
 
-        recorrer(self.base, "")
-        if not lineas[1:]:
-            lineas.append("  (vacío)")
+            if resto:
+                lineas.append(f"{prefijo}└── ... (+{resto} más)")
+
+        recorrer(base, "", 0)
+        lineas.append(
+            f"  {contador} entradas · profundidad {profundidad} · solo lectura"
+        )
         return self._publicar("\n".join(lineas))
 
     def borrar_archivo(self) -> tuple[Path | None, str]:
@@ -340,19 +508,18 @@ class Castigos:
 
     # -------------------------------------------------------- aleatorio
 
-    CASTIGOS = (
-        ("mover", 30),
-        ("modificar", 30),
-        ("puertos", 15),
-        ("ip", 10),
-        ("mapa", 15),
-    )
+    CASTIGOS = ("mover", "modificar", "puertos", "ip", "mapa")
 
     def castigo_aleatorio(self) -> tuple[str, str]:
-        """Aplica un castigo al azar de los de ronda (sin borrar)."""
-        nombres = [nombre for nombre, _ in self.CASTIGOS]
-        pesos = [peso for _, peso in self.CASTIGOS]
-        nombre = random.choices(nombres, weights=pesos, k=1)[0]
+        """Aplica un castigo al azar de los de ronda (sin borrar).
+
+        Se usa una bolsa barajada: en cinco fallos salen los cinco tipos, sin
+        repetir hasta haberlos agotado.
+        """
+        if not self._bolsa:
+            self._bolsa = list(self.CASTIGOS)
+            random.shuffle(self._bolsa)
+        nombre = self._bolsa.pop()
         acciones = {
             "mover": self.mover_archivos,
             "modificar": self.modificar_archivos,
