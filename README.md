@@ -74,16 +74,23 @@ se aplica el castigo y se revela la respuesta correcta.
 ### Inspección del sistema
 
 Los puertos, la IP y la geolocalización se consultan de verdad en el equipo.
-El mapa de archivos recorre una carpeta **en modo solo lectura**:
+El mapa de archivos recorre una carpeta **en modo solo lectura** y **detecta
+el sistema operativo automáticamente**:
 
 ```python
-DIRECTORIO_MAPA = Path.home()   # castigos.py
+DIRECTORIO_MAPA = raiz_del_sistema()
+# Windows -> C:\      Linux / macOS -> /
 ```
 
-- Por defecto mapea tu carpeta personal, con 4 niveles de profundidad, un
-  máximo de 160 entradas y 14 por carpeta. Oculta las carpetas que empiezan
-  por punto y omite `node_modules`, `venv`, etc.
-- Con `Path("/")` mapea todo el disco (más lento y con avisos de permisos).
+- La cabecera del informe muestra el sistema detectado (p. ej. `Linux 7.0…`).
+- Se puede forzar otra raíz, por ejemplo tu carpeta personal:
+  `DIRECTORIO_MAPA = Path.home()`.
+- Con 4 niveles de profundidad, un máximo de 160 entradas y 14 por carpeta.
+  El presupuesto se reparte entre las ramas para que `/boot` o `/etc` no se
+  coman el mapa y siempre salgan `/home`, `/etc`, `/var`, `/usr`, etc.
+- Muestra siempre los directorios primero: aunque una carpeta tenga miles de
+  archivos, sus subcarpetas no se pierden. Oculta las carpetas que empiezan
+  por punto y omite `node_modules`, `venv`, `/proc`, `/sys`, `Windows`, etc.
 - Si prefieres ver también los archivos ocultos:
   `app.castigos.mapa_archivos(incluir_ocultos=True)`.
 

@@ -129,7 +129,10 @@ class Minijuego(tk.Frame):
         try:
             self.paso(dt, max(0.0, restante))
         except Exception as error:  # noqa: BLE001 - no romper la demo
-            print(f"[minijuego] error en {self.nombre}: {error}")
+            try:
+                print(f"[minijuego] error en {self.nombre}: {error}")
+            except Exception:
+                pass
             self._finalizar()
             return
 

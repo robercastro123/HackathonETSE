@@ -6,7 +6,8 @@ Dos zonas distintas:
   ``zona_castigo``, una carpeta de pruebas que se crea sola. Para que actúe
   sobre archivos reales, cámbiala (por ejemplo ``Path.home() / "Escritorio"``).
 - ``DIRECTORIO_MAPA``: aquí solo se LEE, para dibujar el mapa de archivos.
-  Por defecto es tu carpeta personal; con ``Path("/")`` mapea todo el disco.
+  Se elige solo según el sistema: la unidad del sistema (``C:``) en Windows
+  y ``/`` en Linux/macOS.
 
 Los puertos, la IP y la geolocalización se consultan de verdad en el equipo.
 """
@@ -28,8 +29,18 @@ from pathlib import Path
 
 DIRECTORIO_CASTIGO = Path(__file__).resolve().parent / "zona_castigo"
 
-# Solo lectura: carpeta que se recorre para el "mapa de archivos".
-DIRECTORIO_MAPA = Path.home()
+# Solo lectura: raíz que se recorre para el "mapa de archivos".
+# Se elige sola según el sistema operativo:
+#   Windows -> C:\   |   Linux / macOS -> /
+# Se puede forzar otra cosa, por ejemplo Path.home().
+def raiz_del_sistema() -> Path:
+    if platform.system() == "Windows":
+        unidad = os.environ.get("SystemDrive") or "C:"
+        return Path(unidad + "\\")
+    return Path("/")
+
+
+DIRECTORIO_MAPA = raiz_del_sistema()
 
 # Sin conexión, la geolocalización se omite y solo se muestra la IP local.
 PERMITIR_RED = True
@@ -46,6 +57,14 @@ PROTEGIDOS = {
 RUIDO = {
     ".git", "__pycache__", "node_modules", ".cache", ".venv", "venv",
     ".mypy_cache", ".pytest_cache", "site-packages",
+}
+
+# Solo se omiten en el primer nivel (raíz del sistema), para no saltarse
+# una carpeta "dev" o "run" que el usuario tenga dentro de su casa.
+RUIDO_RAIZ = {
+    "proc", "sys", "dev", "run", "snap",
+    "Windows", "$Recycle.Bin", "System Volume Information", "Recovery",
+    "PerfLogs",
 }
 
 SERVICIOS = {
@@ -202,7 +221,14 @@ class Castigos:
             return str(ruta)
 
     def _publicar(self, texto: str) -> str:
-        self.log(texto)
+        """Muestra el informe sin que una consola rara (cp1252, pythonw) lo tumbe."""
+        try:
+            self.log(texto)
+        except Exception:
+            try:
+                self.log(texto.encode("ascii", "replace").decode("ascii"))
+            except Exception:
+                pass
         return texto
 
     # ------------------------------------------------------- castigos
@@ -377,27 +403,47 @@ class Castigos:
         return self._publicar("\n".join(lineas))
 
     def _listar(self, carpeta: Path, limite: int) -> list[Path]:
-        """Lista acotada: no se atasca en carpetas con miles de archivos."""
-        salida = []
+        """Lista acotada, pero priorizando directorios.
+
+        Si una carpeta tiene miles de archivos, con un corte ciego se
+        perderían sus subcarpetas. Aquí se guardan hasta ``limite`` carpetas
+        y hasta ``limite`` archivos, así el mapa nunca se deja los directorios.
+        """
+        carpetas: list[Path] = []
+        archivos: list[Path] = []
         try:
             with os.scandir(carpeta) as entradas:
                 for entrada in entradas:
-                    salida.append(Path(entrada.path))
-                    if len(salida) >= limite:
+                    ruta = Path(entrada.path)
+                    try:
+                        es_dir = entrada.is_dir(follow_symlinks=False)
+                    except OSError:
+                        es_dir = False
+                    if es_dir:
+                        carpetas.append(ruta)
+                    else:
+                        archivos.append(ruta)
+                    if len(carpetas) >= limite and len(archivos) >= limite:
                         break
         except OSError:
             return []
-        return salida
+        return carpetas + archivos
 
     @staticmethod
     def _clave_orden(ruta: Path):
         prioridad = {
+            # carpetas típicas del usuario
             "escritorio": 0, "desktop": 0,
             "documentos": 1, "documents": 1,
             "descargas": 2, "downloads": 2,
             "imágenes": 3, "imagenes": 3, "pictures": 3,
             "música": 4, "musica": 4, "music": 4,
-            "vídeos": 5, "videos": 5, "videos": 5,
+            "vídeos": 5, "videos": 5,
+            # raíces importantes: que /bin o /boot no se coman el mapa
+            "home": 0, "users": 0, "root": 5, "etc": 6, "var": 7,
+            "usr": 8, "opt": 9, "srv": 10, "tmp": 11, "boot": 12,
+            "media": 13, "mnt": 14,
+            "program files": 5, "program files (x86)": 6, "programdata": 7,
         }
         try:
             es_archivo = ruta.is_file()
@@ -413,40 +459,38 @@ class Castigos:
                       por_carpeta: int = 14,
                       incluir_ocultos: bool = False) -> str:
         base = self.mapa_base
+        sistema = platform.system() or "?"
+        version = platform.release() or "?"
         lineas = [
             f"[castigo] MAPA DE ARCHIVOS · {base}",
-            "  (solo lectura)",
+            f"  {sistema} {version}  ·  solo lectura",
         ]
         contador = 0
-        truncado = False
 
-        def recorrer(carpeta: Path, prefijo: str, nivel: int):
-            nonlocal contador, truncado
-            if truncado:
-                return
+        def recorrer(carpeta: Path, prefijo: str, nivel: int,
+                     presupuesto: int) -> int:
+            """Añade como mucho ``presupuesto`` líneas y devuelve cuántas usó."""
+            nonlocal contador
+            if presupuesto <= 0 or contador >= maximo:
+                return 0
             if nivel > profundidad:
                 lineas.append(f"{prefijo}... (profundidad máxima)")
-                return
+                return 0
 
             hijos = self._listar(carpeta, maximo * 2)
             if not incluir_ocultos:
                 hijos = [h for h in hijos if not h.name.startswith(".")]
             if not hijos:
-                return
+                return 0
             hijos.sort(key=self._clave_orden)
 
             resto = max(0, len(hijos) - por_carpeta)
             visibles = hijos[:por_carpeta]
+            usadas = 0
 
             for posicion, hijo in enumerate(visibles):
-                if truncado:
-                    return
-                if contador >= maximo:
-                    lineas.append(
-                        f"{prefijo}... (truncado en {maximo} entradas)"
-                    )
-                    truncado = True
-                    return
+                if usadas >= presupuesto or contador >= maximo:
+                    break
                 ultimo = posicion == len(visibles) - 1 and resto == 0
                 rama = "└── " if ultimo else "├── "
                 try:
@@ -455,16 +499,29 @@ class Castigos:
                     es_dir = False
 
                 if es_dir:
-                    if hijo.name in RUIDO:
+                    omitir = hijo.name in RUIDO or (
+                        nivel == 0 and hijo.name in RUIDO_RAIZ
+                    )
+                    if omitir:
                         lineas.append(f"{prefijo}{rama}{hijo.name}/  [omitido]")
                         contador += 1
+                        usadas += 1
                         continue
+
                     lineas.append(f"{prefijo}{rama}{hijo.name}/")
                     contador += 1
-                    recorrer(
+                    usadas += 1
+
+                    restante = presupuesto - usadas
+                    if restante <= 0:
+                        continue
+                    # reparto proporcional: ninguna rama se come todo el mapa
+                    cuota = max(4, restante // max(1, len(visibles) - posicion))
+                    usadas += recorrer(
                         hijo,
                         prefijo + ("    " if ultimo else "│   "),
                         nivel + 1,
+                        min(cuota, restante),
                     )
                 else:
                     try:
@@ -476,11 +533,16 @@ class Castigos:
                         f"{prefijo}{rama}{hijo.name}  ({tam} B){enlace}"
                     )
                     contador += 1
+                    usadas += 1
 
-            if resto:
+            if resto and usadas < presupuesto:
                 lineas.append(f"{prefijo}└── ... (+{resto} más)")
+            return usadas
 
-        recorrer(base, "", 0)
+        try:
+            recorrer(base, "", 0, maximo)
+        except Exception as error:  # noqa: BLE001 - un mapa roto no debe tumbar el quiz
+            lineas.append(f"  [error al recorrer: {error}]")
         lineas.append(
             f"  {contador} entradas · profundidad {profundidad} · solo lectura"
         )

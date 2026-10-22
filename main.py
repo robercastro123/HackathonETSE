@@ -23,6 +23,7 @@ Ctrl+Alt+Supr sigue funcionando siempre.
 
 import json
 import random
+import sys
 import time
 import tkinter as tk
 from pathlib import Path
@@ -56,6 +57,14 @@ try:
     _WINREG_OK = True
 except Exception:
     _WINREG_OK = False
+
+
+def _imprimir(texto):
+    """print que no rompe si no hay consola (pythonw, .exe sin terminal)."""
+    try:
+        print(texto)
+    except Exception:
+        pass
 
 
 class BloqueoRegistro:
@@ -179,13 +188,13 @@ class Aplicacion:
         self.contenedor = tk.Frame(root, bg=T.BG)
         self.contenedor.pack(fill="both", expand=True)
 
-        print("[quiz] salida de emergencia del operador: F12 tres veces seguidas")
+        _imprimir("[quiz] salida de emergencia del operador: F12 tres veces seguidas")
         self._pantalla_inicio()
 
     # ---------------------------------------------------------- utilidades
 
     def _consola(self, texto):
-        print(texto)
+        _imprimir(texto)
         self.registro.append(texto)
         if len(self.registro) > 300:
             del self.registro[:100]
@@ -737,6 +746,13 @@ def cargar_preguntas():
 
 
 def main():
+    # En consolas Windows (cp1252) los árboles con ├── rompen el print.
+    for flujo in (sys.stdout, sys.stderr):
+        try:
+            flujo.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
     preguntas = cargar_preguntas()
     root = tk.Tk()
     app = Aplicacion(root, preguntas)
