@@ -1,0 +1,299 @@
+[
+  {
+    "categoria": "Geo",
+    "pregunta": "¿Cuántos continentes hay?",
+    "opciones": [
+      "Tres",
+      "Seis",
+      "Ocho",
+      "Siete"
+    ],
+    "correcta": 2
+  },
+  {
+    "categoria": "Geo",
+    "pregunta": "¿Qué ave aparece en la bandera de uganda?",
+    "opciones": [
+      "Pavo real",
+      "Gallo",
+      "Loro",
+      "Grulla"
+    ],
+    "correcta": 3
+  },
+  {
+    "categoria": "Geo",
+    "pregunta": "¿Con cuántos países colinda Laos?",
+    "opciones": [
+      "5",
+      "2",
+      "4",
+      "3"
+    ],
+    "correcta": 0
+  },
+  {
+    "categoria": "Geo",
+    "pregunta": "¿En qué ciudad está \"la nariz\" de la Península Ibérica?",
+    "opciones": [
+      "Barcelona",
+      "Murcia",
+      "Algarve",
+      "Lisboa"
+    ],
+    "correcta": 3
+  },
+  {
+    "categoria": "Geo",
+    "pregunta": "En el año 1980, ¿qué países eran fronterizos con Finlandia?",
+    "opciones": [
+      "Suecia, Estonia, Unión Soviética",
+      "Suecia, Rusia",
+      "Suecia, Unión Soviética",
+      "Suecia, Noruega, Unión Soviética"
+    ],
+    "correcta": 3
+  },
+  {
+    "categoria": "CiNat",
+    "pregunta": "¿Cuántos dientes tienen los pingüinos?",
+    "opciones": [
+      "Treinta y dos",
+      "Cuarenta y ocho",
+      "Cero",
+      "Veintiseis"
+    ],
+    "correcta": 2
+  },
+  {
+    "categoria": "CiNat",
+    "pregunta": "¿Cuál la célula más grande del mundo?",
+    "opciones": [
+      "Bacterias",
+      "Ser humano",
+      "Huevo de avestruz",
+      "Tardígrado"
+    ],
+    "correcta": 2
+  },
+  {
+    "categoria": "CiNat",
+    "pregunta": "¿Cuántos árboles hay en el Amazonas?",
+    "opciones": [
+      "280 mil millones",
+      "390 mil millones",
+      "450 mil millones",
+      "500 mil millones"
+    ],
+    "correcta": 1
+  },
+  {
+    "categoria": "CiNat",
+    "pregunta": "¿Cuánto es 3523 * 12098?",
+    "opciones": [
+      "42621254",
+      "18341984",
+      "16838974",
+      "83831084"
+    ],
+    "correcta": 0
+  },
+  {
+    "categoria": "ArLit",
+    "pregunta": "¿Quién pintó Castaños en Osny?",
+    "opciones": [
+      "Edward Hopper",
+      "Camile Pissarro",
+      "Claude Monet",
+      "Édouard Manet"
+    ],
+    "correcta": 1
+  },
+  {
+    "categoria": "ArLit",
+    "pregunta": "¿En qué año salió el libro 1984?",
+    "opciones": [
+      "1984",
+      "2001",
+      "1952",
+      "1949"
+    ],
+    "correcta": 3
+  },
+  {
+    "categoria": "ArLit",
+    "pregunta": "¿Cómo murió Virginia Woolf?",
+    "opciones": [
+      "Suicidio",
+      "Muerte natural",
+      "Asesinada",
+      "Tuberculosis"
+    ],
+    "correcta": 0
+  },
+  {
+    "categoria": "Hist",
+    "pregunta": "¿Cuál era la película favorita de Hitler?",
+    "opciones": [
+      "King Kong",
+      "Ser o No Ser",
+      "Sopa de Ganso",
+      "Lo Que el Viento Se Llevó"
+    ],
+    "correcta": 0
+  },
+  {
+    "categoria": "Hist",
+    "pregunta": "¿Cuánto medía Napoleón?",
+    "opciones": [
+      "190 cm",
+      "178 cm",
+      "168 cm",
+      "158 cm"
+    ],
+    "correcta": 2
+  },
+  {
+    "categoria": "Hist",
+    "pregunta": "¿Cuántas guerras mundiales hubo entre la primera y la segunda?",
+    "opciones": [
+      "Una",
+      "Dos",
+      "Cero",
+      "Tres"
+    ],
+    "correcta": 2
+  },
+  {
+    "categoria": "Hist",
+    "pregunta": "¿Cuántos años duró la Guerra de los Cien Años?",
+    "opciones": [
+      "100",
+      "126",
+      "116",
+      "99"
+    ],
+    "correcta": 2
+  },
+  {
+    "categoria": "DepCo",
+    "pregunta": "¿Cuál es plato nacional de Nicaragua?",
+    "opciones": [
+      "Gallo Pinto",
+      "Ayote en miel",
+      "Tortilla de maíz",
+      "Sopa de cuajada"
+    ],
+    "correcta": 0
+  },
+  {
+    "categoria": "DepCo",
+    "pregunta": "¿Quién ganó el Tour de Francia 1996?",
+    "opciones": [
+      "Richard Virenque",
+      "Bertín Osborne",
+      "Bjarne Riis",
+      "Jan Ullrich"
+    ],
+    "correcta": 2
+  },
+  {
+    "categoria": "DepCo",
+    "pregunta": "¿Quién ganó el último mundial?",
+    "opciones": [
+      "Ciudad del Vaticano",
+      "Andorra",
+      "España",
+      "Messi"
+    ],
+    "correcta": 2
+  },
+  {
+    "categoria": "Entre",
+    "pregunta": "¿Quién dirigió La Diligencia (1939)?",
+    "opciones": [
+      "John Ford",
+      "Sergio Leone",
+      "Alan Smithee",
+      "John Wayne"
+    ],
+    "correcta": 0
+  },
+  {
+    "categoria": "Entre",
+    "pregunta": "¿En qué año salió Dune (1984)?",
+    "opciones": [
+      "2024",
+      "2021",
+      "2001",
+      "1984"
+    ],
+    "correcta": 3
+  },
+  {
+    "categoria": "Entre",
+    "pregunta": "¿Salió antes Frozen o Frozen 2?",
+    "opciones": [
+      "Frozen 2",
+      "Salieron a la vez",
+      "No existen",
+      "Frozen"
+    ],
+    "correcta": 3
+  },
+  {
+    "categoria": "Entre",
+    "pregunta": "¿Quién es el artista español con más Grammys?",
+    "opciones": [
+      "Enrique Iglesias",
+      "Alejandro Sanz",
+      "Rosalía",
+      "C Tangana"
+    ],
+    "correcta": 1
+  },
+  {
+    "categoria": "Prog",
+    "pregunta": "¿Cuál es el mejor lenguaje de programación?",
+    "opciones": [
+      "C++",
+      "Lua",
+      "Java",
+      "Python"
+    ],
+    "correcta": 1
+  },
+  {
+    "categoria": "Prog",
+    "pregunta": "¿Cuál es el mejor motor de videojuegos?",
+    "opciones": [
+      "Unity",
+      "Unreal Engine",
+      "Godot",
+      "Roblox Studio"
+    ],
+    "correcta": 3
+  },
+  {
+    "categoria": "Act",
+    "pregunta": "¿Dónde está Nicolás Maduro?",
+    "opciones": [
+      "Presidiendo Venezuela",
+      "En la cárcel",
+      "Jubilado",
+      "De vacaciones"
+    ],
+    "correcta": 1
+  },
+  {
+    "categoria": "Act",
+    "pregunta": "¿Quién preside la Comisión Europea?",
+    "opciones": [
+      "Biljana Borzan",
+      "Ursula von der Leyen",
+      "Waldemar Buda",
+      "Daniel Buda"
+    ],
+    "correcta": 1
+  }
+]

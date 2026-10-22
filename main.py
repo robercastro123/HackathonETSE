@@ -14,6 +14,8 @@ del equipo. Ejecútalo en tu propio ordenador.
 """
 
 import tkinter as tk
+import json
+from pathlib import Path
 from tkinter import messagebox, simpledialog
 
 # ----------------------------------------------------------------------
@@ -63,8 +65,9 @@ CARD = "#1a1d27"
 
 
 class QuizKiosco:
-    def __init__(self, root):
+    def __init__(self, root, preguntas):
         self.root = root
+        self.preguntas = preguntas
         self.indice = 0
         self.aciertos = 0
         self.seleccion = tk.IntVar(value=-1)
@@ -136,11 +139,11 @@ class QuizKiosco:
         self.lbl_ayuda.pack(side="bottom", pady=20)
 
     def _mostrar_pregunta(self):
-        p = PREGUNTAS[self.indice]
+        p = self.preguntas[self.indice]
         self.respondida = False
         self.seleccion.set(-1)
         self.contador.config(
-            text=f"Pregunta {self.indice + 1} de {len(PREGUNTAS)}"
+            text=f"Pregunta {self.indice + 1} de {len(self.preguntas)}"
         )
         self.lbl_pregunta.config(text=p["pregunta"])
         for i, b in enumerate(self.botones):
@@ -167,7 +170,7 @@ class QuizKiosco:
         if self.seleccion.get() == -1:
             return
         self.respondida = True
-        p = PREGUNTAS[self.indice]
+        p = self.preguntas[self.indice]
         correcta = p["correcta"]
         elegida = self.seleccion.get()
 
@@ -185,14 +188,14 @@ class QuizKiosco:
                 fg=BAD,
             )
 
-        ultima = self.indice == len(PREGUNTAS) - 1
+        ultima = self.indice == len(self.preguntas) - 1
         self.btn_siguiente.config(
             text="Ver resultado" if ultima else "Siguiente", state="normal"
         )
 
     def _avanzar(self):
         self.indice += 1
-        if self.indice < len(PREGUNTAS):
+        if self.indice < len(self.preguntas):
             self._mostrar_pregunta()
         else:
             self._mostrar_resultado()
@@ -201,7 +204,7 @@ class QuizKiosco:
         for w in self.frame_opciones.winfo_children():
             w.pack_forget()
         self.contador.config(text="Finalizado")
-        total = len(PREGUNTAS)
+        total = len(self.preguntas)
         self.lbl_pregunta.config(
             text=f"Puntuación: {self.aciertos} / {total}"
         )
@@ -234,9 +237,42 @@ class QuizKiosco:
         self.root.destroy()
 
 
+def cargar_preguntas():
+    ruta = Path(__file__).with_name("preguntas.json")
+    try:
+        with ruta.open(encoding="utf-8") as archivo:
+            preguntas = json.load(archivo)
+    except FileNotFoundError as error:
+        raise SystemExit(
+            "No se encontró preguntas.json. Genera el archivo con: "
+            "python3 csv_a_json.py preguntas.csv preguntas.json"
+        ) from error
+    except (OSError, json.JSONDecodeError) as error:
+        raise SystemExit(f"No se pudo leer {ruta}: {error}") from error
+
+    if not isinstance(preguntas, list) or not preguntas:
+        raise SystemExit(f"{ruta} debe contener una lista no vacía de preguntas.")
+    for numero, pregunta in enumerate(preguntas, start=1):
+        if not isinstance(pregunta, dict):
+            raise SystemExit(f"La pregunta {numero} no tiene un formato válido.")
+        opciones = pregunta.get("opciones")
+        correcta = pregunta.get("correcta")
+        if (
+            not isinstance(pregunta.get("pregunta"), str)
+            or not isinstance(opciones, list)
+            or len(opciones) != 4
+            or not all(isinstance(opcion, str) and opcion for opcion in opciones)
+            or type(correcta) is not int
+            or not 0 <= correcta < 4
+        ):
+            raise SystemExit(f"La pregunta {numero} no tiene un formato válido.")
+    return preguntas
+
+
 def main():
+    preguntas = cargar_preguntas()
     root = tk.Tk()
-    QuizKiosco(root)
+    QuizKiosco(root, preguntas)
     root.mainloop()
 
 

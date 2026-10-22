@@ -26,6 +26,7 @@ import argparse
 import csv
 import io
 import json
+import random
 import re
 import sys
 import unicodedata
@@ -54,6 +55,9 @@ ALIAS_COLUMNAS = {
     "opcion_2": "opcion_b",
     "opcion_3": "opcion_c",
     "opcion_4": "opcion_d",
+    "incorrecta_1": "incorr1",
+    "incorrecta_2": "incorr2",
+    "incorrecta_3": "incorr3",
 }
 
 
@@ -124,8 +128,18 @@ def convertir_csv(ruta_csv: str | Path, categoria_fija: str | None = None) -> li
         if clave and clave not in encabezados:
             encabezados[clave] = original
 
-    faltantes = [columna for columna in COLUMNAS_REQUERIDAS
-                 if columna not in encabezados]
+    formato_actual = all(
+        columna in encabezados
+        for columna in (
+            "pregunta", "respuesta_correcta", "incorr1", "incorr2", "incorr3"
+        )
+    )
+    requeridas = (
+        ("pregunta", "respuesta_correcta", "incorr1", "incorr2", "incorr3")
+        if formato_actual
+        else COLUMNAS_REQUERIDAS
+    )
+    faltantes = [columna for columna in requeridas if columna not in encabezados]
     if faltantes:
         raise ErrorCsv(
             "Faltan columnas obligatorias: " + ", ".join(faltantes) +
@@ -142,12 +156,18 @@ def convertir_csv(ruta_csv: str | Path, categoria_fija: str | None = None) -> li
     errores: list[str] = []
 
     for numero_fila, fila in enumerate(lector, start=2):
-        if not any((dato or "").strip() for dato in fila.values() if isinstance(dato, str)):
+        if not any(valor(fila, columna) for columna in requeridas):
             continue  # línea vacía
 
         enunciado = valor(fila, "pregunta")
-        opciones = [valor(fila, f"opcion_{letra}") for letra in "abcd"]
-        respuesta = valor(fila, "respuesta_correcta")
+        if formato_actual:
+            respuesta = valor(fila, "respuesta_correcta")
+            opciones = [respuesta] + [
+                valor(fila, f"incorr{numero}") for numero in range(1, 4)
+            ]
+        else:
+            opciones = [valor(fila, f"opcion_{letra}") for letra in "abcd"]
+            respuesta = valor(fila, "respuesta_correcta")
 
         if not enunciado:
             errores.append(f"Fila {numero_fila}: la pregunta está vacía.")
@@ -155,17 +175,27 @@ def convertir_csv(ruta_csv: str | Path, categoria_fija: str | None = None) -> li
         if any(not opcion for opcion in opciones):
             errores.append(f"Fila {numero_fila}: faltan opciones (se necesitan 4).")
             continue
-        if not respuesta:
-            errores.append(f"Fila {numero_fila}: falta la respuesta correcta.")
-            continue
 
-        indice = _indice_correcto(respuesta, opciones)
-        if indice is None:
-            errores.append(
-                f"Fila {numero_fila}: la respuesta «{respuesta}» no es una letra "
-                "A-D, un número 1-4 ni el texto de una opción."
+        if formato_actual:
+            # Use a stable per-question order so repeated conversions produce
+            # the same JSON without making the correct option always first.
+            random.Random(enunciado).shuffle(opciones)
+            indice = next(
+                i for i, opcion in enumerate(opciones)
+                if opcion == respuesta
             )
-            continue
+        else:
+            if not respuesta:
+                errores.append(f"Fila {numero_fila}: falta la respuesta correcta.")
+                continue
+
+            indice = _indice_correcto(respuesta, opciones)
+            if indice is None:
+                errores.append(
+                    f"Fila {numero_fila}: la respuesta «{respuesta}» no es una letra "
+                    "A-D, un número 1-4 ni el texto de una opción."
+                )
+                continue
 
         if categoria_fija:
             categoria = categoria_fija
