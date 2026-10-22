@@ -1,6 +1,10 @@
-"""Seis minijuegos de Tkinter para el quiz.
+"""Minijuegos de Tkinter para el quiz.
 
-Cada minijuego dura 20 segundos y devuelve un rango:
+Solo está activo ``NoToquesLosPinchos`` (sin límite de tiempo: termina cuando
+chocas). Los demás siguen en el archivo en ``MINIJUEGOS_ANTIGUOS`` por si
+quieres recuperarlos.
+
+Cada minijuego devuelve un rango:
 
     alto  -> 2 comodines
     medio -> 1 comodín
@@ -124,10 +128,12 @@ class Minijuego(tk.Frame):
         ahora = time.perf_counter()
         dt = min(0.06, max(0.001, ahora - self._t_ultimo))
         self._t_ultimo = ahora
-        restante = self.duracion - (ahora - self._t0)
+        restante = None
+        if self.duracion:
+            restante = self.duracion - (ahora - self._t0)
 
         try:
-            self.paso(dt, max(0.0, restante))
+            self.paso(dt, max(0.0, restante) if restante is not None else 0.0)
         except Exception as error:  # noqa: BLE001 - no romper la demo
             try:
                 print(f"[minijuego] error en {self.nombre}: {error}")
@@ -139,11 +145,16 @@ class Minijuego(tk.Frame):
         if self._terminado:
             return
 
-        self.hud.config(
-            text=f"{self.nombre}   ·   {self.puntos} pts   ·   "
-                 f"{max(0.0, restante):0.1f}s"
-        )
-        if restante <= 0:
+        if restante is None:
+            self.hud.config(
+                text=f"{self.nombre}   ·   {self.puntos} pts"
+            )
+        else:
+            self.hud.config(
+                text=f"{self.nombre}   ·   {self.puntos} pts   ·   "
+                     f"{max(0.0, restante):0.1f}s"
+            )
+        if restante is not None and restante <= 0:
             self._finalizar()
         else:
             self._jobs.append(self.after(16, self._loop))
@@ -576,7 +587,7 @@ class NoToquesLosPinchos(Minijuego):
     ayuda = "Espacio para aletear. Pasa por los huecos sin tocar los pinchos."
     umbral_alto = 6
     umbral_medio = 3
-    duracion = 22.0
+    duracion = None  # sin límite de tiempo: termina cuando chocas
 
     _X = 190
     _R = 14
@@ -768,10 +779,15 @@ class JungleRun(Minijuego):
 
 
 MINIJUEGOS = (
+    NoToquesLosPinchos,
+)
+
+# El resto de minijuegos siguen en el archivo por si quieres recuperarlos;
+# basta con añadirlos a la tupla de arriba.
+MINIJUEGOS_ANTIGUOS = (
     Balldrop,
     ParcelPanic,
     FruitNinja,
     CrossyRoad,
-    NoToquesLosPinchos,
     JungleRun,
 )

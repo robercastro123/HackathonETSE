@@ -16,13 +16,14 @@ from __future__ import annotations
 
 import getpass
 import json
+import math
 import os
 import platform
 import random
 import shutil
 import socket
 import urllib.request
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 # ---------------------------------------------------------------- ajustes
@@ -41,6 +42,11 @@ def raiz_del_sistema() -> Path:
 
 
 DIRECTORIO_MAPA = raiz_del_sistema()
+
+# Ajustes del árbol que se muestra como castigo.
+MAPA_MAXIMO = 240        # líneas/entradas totales
+MAPA_PROFUNDIDAD = 8     # niveles de carpetas
+MAPA_POR_CARPETA = 16    # entradas por carpeta
 
 # Sin conexión, la geolocalización se omite y solo se muestra la IP local.
 PERMITIR_RED = True
@@ -67,16 +73,36 @@ RUIDO_RAIZ = {
     "PerfLogs",
 }
 
+# Proveedores de geolocalización por IP. Se consultan en paralelo y se
+# combinan: así una base de datos desfasada no manda ella sola.
+PROVEEDORES_GEO = (
+    ("ipapi.co", "https://ipapi.co/json/"),
+    ("ipwho.is", "https://ipwho.is/"),
+    (
+        "ip-api.com",
+        "http://ip-api.com/json/?fields=status,country,regionName,city,zip,"
+        "lat,lon,timezone,isp,org,as,query",
+    ),
+    ("freeipapi", "https://freeipapi.com/api/json"),
+    ("ipinfo.io", "https://ipinfo.io/json"),
+)
+
+# Si dos proveedores se separan más de esto, se considera que uno va perdido.
+RADIO_CONSENSO_KM = 40.0
+
+# Lista fija de puertos que se comprueban en 127.0.0.1. Se puede ampliar.
 SERVICIOS = {
     21: "FTP", 22: "SSH", 23: "Telnet", 25: "SMTP", 53: "DNS",
     80: "HTTP", 110: "POP3", 111: "rpcbind", 135: "MSRPC", 139: "NetBIOS",
     143: "IMAP", 443: "HTTPS", 445: "SMB", 515: "LPD", 631: "IPP",
-    993: "IMAPS", 995: "POP3S", 1521: "Oracle", 2049: "NFS",
-    3000: "Node/Grafana", 3306: "MySQL", 3389: "RDP", 5000: "Flask/UPnP",
-    5432: "PostgreSQL", 5900: "VNC", 5985: "WinRM", 6379: "Redis",
+    993: "IMAPS", 995: "POP3S", 1433: "MSSQL", 1521: "Oracle",
+    2049: "NFS", 3000: "Node/Grafana", 3306: "MySQL", 3389: "RDP",
+    5000: "Flask/UPnP", 5060: "SIP", 5353: "mDNS", 5432: "PostgreSQL",
+    5900: "VNC", 5985: "WinRM", 6379: "Redis", 7000: "AirPlay",
     8000: "HTTP-alt", 8080: "HTTP-alt", 8081: "HTTP-alt", 8443: "HTTPS-alt",
-    9090: "Prometheus", 9200: "Elasticsearch", 11211: "Memcached",
-    27017: "MongoDB",
+    8888: "HTTP-alt", 9000: "Portainer", 9090: "Prometheus",
+    9091: "Pushgateway", 9200: "Elasticsearch", 10000: "Webmin",
+    11211: "Memcached", 27017: "MongoDB",
 }
 
 # Archivos de ejemplo para que la demo tenga algo que mover y romper.
@@ -167,6 +193,120 @@ def identidad_sistema() -> tuple[str, str]:
     return usuario, equipo
 
 
+def _a_float(valor):
+    try:
+        return float(valor)
+    except (TypeError, ValueError):
+        return None
+
+
+def _distancia_km(lat1, lon1, lat2, lon2) -> float:
+    """Distancia ortodrómica entre dos coordenadas, en kilómetros."""
+    radio = 6371.0
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dp = math.radians(lat2 - lat1)
+    dl = math.radians(lon2 - lon1)
+    a = (
+        math.sin(dp / 2) ** 2
+        + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
+    )
+    return 2 * radio * math.asin(min(1.0, math.sqrt(a)))
+
+
+def _mas_comun(valores):
+    """Valor más repetido, manteniendo el orden de aparición en los empates."""
+    limpios = [valor for valor in valores if valor]
+    if not limpios:
+        return None
+    conteo = {}
+    for valor in limpios:
+        conteo[valor] = conteo.get(valor, 0) + 1
+    return max(conteo, key=conteo.get)
+
+
+def _normalizar_geo(nombre: str, datos):
+    """Convierte la respuesta de cada proveedor a un formato común."""
+    if not isinstance(datos, dict):
+        return None
+
+    if nombre == "ipapi.co":
+        if datos.get("error") or not datos.get("ip"):
+            return None
+        return {
+            "proveedor": nombre,
+            "ip": datos.get("ip"),
+            "ciudad": datos.get("city"),
+            "region": datos.get("region"),
+            "pais": datos.get("country_name"),
+            "cp": datos.get("postal"),
+            "lat": _a_float(datos.get("latitude")),
+            "lon": _a_float(datos.get("longitude")),
+            "org": datos.get("org"),
+        }
+
+    if nombre == "ipwho.is":
+        if datos.get("success") is False or not datos.get("ip"):
+            return None
+        conexion = datos.get("connection") or {}
+        return {
+            "proveedor": nombre,
+            "ip": datos.get("ip"),
+            "ciudad": datos.get("city"),
+            "region": datos.get("region"),
+            "pais": datos.get("country"),
+            "cp": datos.get("postal"),
+            "lat": _a_float(datos.get("latitude")),
+            "lon": _a_float(datos.get("longitude")),
+            "org": conexion.get("isp") or conexion.get("org"),
+        }
+
+    if nombre == "ip-api.com":
+        if datos.get("status") != "success":
+            return None
+        return {
+            "proveedor": nombre,
+            "ip": datos.get("query"),
+            "ciudad": datos.get("city"),
+            "region": datos.get("regionName"),
+            "pais": datos.get("country"),
+            "cp": datos.get("zip"),
+            "lat": _a_float(datos.get("lat")),
+            "lon": _a_float(datos.get("lon")),
+            "org": datos.get("isp") or datos.get("org"),
+        }
+
+    if nombre == "freeipapi":
+        if not datos.get("ipAddress"):
+            return None
+        return {
+            "proveedor": nombre,
+            "ip": datos.get("ipAddress"),
+            "ciudad": datos.get("cityName"),
+            "region": datos.get("regionName"),
+            "pais": datos.get("countryName"),
+            "cp": datos.get("zipCode"),
+            "lat": _a_float(datos.get("latitude")),
+            "lon": _a_float(datos.get("longitude")),
+            "org": datos.get("asnOrganization"),
+        }
+
+    if nombre == "ipinfo.io":
+        loc = str(datos.get("loc") or "").split(",")
+        return {
+            "proveedor": nombre,
+            "ip": datos.get("ip"),
+            "ciudad": datos.get("city"),
+            "region": datos.get("region"),
+            "pais": datos.get("country"),
+            "cp": datos.get("postal"),
+            "lat": _a_float(loc[0]) if len(loc) == 2 else None,
+            "lon": _a_float(loc[1]) if len(loc) == 2 else None,
+            "org": datos.get("org"),
+        }
+
+    return None
+
+
 class Castigos:
     def __init__(self, usuario: str, base: Path | str | None = None,
                  mapa_base: Path | str | None = None,
@@ -178,7 +318,8 @@ class Castigos:
         self.permitir_red = PERMITIR_RED if permitir_red is None else permitir_red
         self._cache_geo = None
         self._geo_consultada = False
-        self._bolsa = []
+        self._bolsa = list(self.CASTIGOS)
+        random.shuffle(self._bolsa)
         self._preparar()
 
     def identidad(self) -> tuple[str, str]:
@@ -278,77 +419,176 @@ class Castigos:
         )
 
     def puertos_abiertos(self) -> str:
-        def abierto(puerto: int) -> bool:
-            try:
-                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-                    sock.settimeout(0.25)
-                    return sock.connect_ex(("127.0.0.1", puerto)) == 0
-            except OSError:
-                return False
+        ip_local = None
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+                sock.connect(("8.8.8.8", 80))
+                ip_local = sock.getsockname()[0]
+        except OSError:
+            pass
+
+        objetivos = [("127.0.0.1", socket.AF_INET)]
+        if ip_local and ip_local != "127.0.0.1":
+            objetivos.append((ip_local, socket.AF_INET))
+        if socket.has_ipv6:
+            objetivos.append(("::1", socket.AF_INET6))
+
+        def abierto(puerto: int):
+            for host, familia in objetivos:
+                try:
+                    with socket.socket(familia, socket.SOCK_STREAM) as sock:
+                        sock.settimeout(0.2)
+                        if sock.connect_ex((host, puerto)) == 0:
+                            return host
+                except OSError:
+                    continue
+            return None
 
         with ThreadPoolExecutor(max_workers=32) as pool:
             resultados = list(pool.map(abierto, SERVICIOS))
 
-        abiertos = [
-            f"  {puerto:>5}/tcp  {servicio}"
-            for puerto, servicio, esta in zip(SERVICIOS, SERVICIOS.values(), resultados)
-            if esta
+        lineas = [
+            f"[castigo] PUERTOS ABIERTOS  "
+            f"({len(SERVICIOS)} puertos × {len(objetivos)} direcciones)",
+            f"  objetivos: {', '.join(host for host, _ in objetivos)}",
         ]
-        cabecera = (
-            f"[castigo] PUERTOS ABIERTOS EN 127.0.0.1  "
-            f"({len(SERVICIOS)} puertos comprobados)"
-        )
-        if not abiertos:
-            return self._publicar(
-                cabecera + "\n  (ninguno de los habituales respondió)"
+        abiertos = [
+            f"  {puerto:>5}/tcp  {servicio:<15} ({host})"
+            for puerto, servicio, host in zip(
+                SERVICIOS, SERVICIOS.values(), resultados
             )
-        return self._publicar(cabecera + "\n" + "\n".join(abiertos))
+            if host
+        ]
+        if not abiertos:
+            lineas.append("  (ninguno de los habituales respondió)")
+        else:
+            lineas.extend(abiertos)
+        return self._publicar("\n".join(lineas))
 
     def _pedir_json(self, url: str, timeout: float):
-        with urllib.request.urlopen(url, timeout=timeout) as respuesta:
+        peticion = urllib.request.Request(
+            url, headers={"User-Agent": "QuizHackathon/1.0 (demo)"}
+        )
+        with urllib.request.urlopen(peticion, timeout=timeout) as respuesta:
             return json.load(respuesta)
 
     def _consultar_geo(self):
-        """Intenta varios proveedores; devuelve dict normalizado o None."""
-        try:
-            datos = self._pedir_json("https://ipapi.co/json/", 2.0)
-            if datos.get("ip"):
-                return {
-                    "ip": datos.get("ip"),
-                    "ciudad": datos.get("city"),
-                    "region": datos.get("region"),
-                    "pais": datos.get("country_name"),
-                    "org": datos.get("org"),
-                    "lat": datos.get("latitude"),
-                    "lon": datos.get("longitude"),
-                }
-        except Exception:
-            pass
+        """Pregunta a varios proveedores en paralelo y saca un consenso.
 
-        try:
-            datos = self._pedir_json("https://ipwho.is/", 2.0)
-            if datos.get("success") and datos.get("ip"):
-                conexion = datos.get("connection") or {}
-                return {
-                    "ip": datos.get("ip"),
-                    "ciudad": datos.get("city"),
-                    "region": datos.get("region"),
-                    "pais": datos.get("country"),
-                    "org": conexion.get("isp") or conexion.get("org"),
-                    "lat": datos.get("latitude"),
-                    "lon": datos.get("longitude"),
-                }
-        except Exception:
-            pass
+        Cada base de datos de IP falla en sitios distintos. Se agrupan las
+        respuestas que caen a menos de RADIO_CONSENSO_KM y se usa el centro
+        del grupo mayor: se descartan solas las que se van a otra provincia.
+        """
+        if not self.permitir_red:
+            return None
 
-        # Último recurso: al menos la IP pública, sin geolocalización.
+        resultados = []
+        pool = ThreadPoolExecutor(max_workers=len(PROVEEDORES_GEO))
+        futuros = {
+            pool.submit(self._pedir_json, url, 1.4): nombre
+            for nombre, url in PROVEEDORES_GEO
+        }
         try:
-            datos = self._pedir_json("https://api.ipify.org?format=json", 1.5)
-            if datos.get("ip"):
-                return {"ip": datos.get("ip")}
+            for futuro in as_completed(futuros, timeout=2.2):
+                nombre = futuros[futuro]
+                try:
+                    datos = futuro.result()
+                except Exception:
+                    continue
+                try:
+                    normal = _normalizar_geo(nombre, datos)
+                except Exception:
+                    normal = None
+                if normal:
+                    resultados.append(normal)
         except Exception:
-            pass
-        return None
+            pass  # nos quedamos con las respuestas que hayan llegado
+        finally:
+            for futuro in futuros:
+                futuro.cancel()
+            pool.shutdown(wait=False)
+
+        if not any(r.get("ip") for r in resultados):
+            try:
+                extra = self._pedir_json("https://api.ipify.org?format=json", 1.5)
+                if extra.get("ip"):
+                    return {
+                        "ip": extra["ip"], "ciudades": [], "region": None,
+                        "pais": None, "cps": [], "org": None, "lat": None,
+                        "lon": None, "precision_km": None, "fuentes": [],
+                        "descartadas": 0,
+                    }
+            except Exception:
+                pass
+            return None
+
+        con_coords = [
+            r for r in resultados
+            if r.get("lat") is not None and r.get("lon") is not None
+        ]
+
+        if not con_coords:
+            return {
+                "ip": _mas_comun([r.get("ip") for r in resultados]),
+                "ciudades": [], "region": None, "pais": None, "cps": [],
+                "org": _mas_comun([r.get("org") for r in resultados]),
+                "lat": None, "lon": None, "precision_km": None,
+                "fuentes": [], "descartadas": 0,
+            }
+
+        def cerca(a, b):
+            return _distancia_km(a["lat"], a["lon"], b["lat"], b["lon"]) <= RADIO_CONSENSO_KM
+
+        # Semilla: el punto con más vecinos; luego su grupo y su centro.
+        semilla = max(
+            con_coords,
+            key=lambda p: sum(1 for q in con_coords if cerca(p, q)),
+        )
+        grupo = [q for q in con_coords if cerca(semilla, q)]
+
+        centro_lat = sum(q["lat"] for q in grupo) / len(grupo)
+        centro_lon = sum(q["lon"] for q in grupo) / len(grupo)
+
+        # Para el mapa se usa el punto real más cercano al centro (no el
+        # centro, que puede caer en el agua): así el marcador es una ciudad.
+        punto = min(
+            grupo,
+            key=lambda q: _distancia_km(
+                centro_lat, centro_lon, q["lat"], q["lon"]
+            ),
+        )
+        lat, lon = punto["lat"], punto["lon"]
+        dispersion = max(
+            _distancia_km(lat, lon, q["lat"], q["lon"]) for q in grupo
+        )
+
+        ciudades = []
+        cps = []
+        if punto.get("ciudad"):
+            ciudades.append(punto["ciudad"])
+            cps.extend(
+                q["cp"] for q in grupo
+                if q.get("cp") and q.get("ciudad") == punto["ciudad"]
+            )
+        for q in grupo:
+            if q.get("ciudad") and q["ciudad"] not in ciudades:
+                ciudades.append(q["ciudad"])
+            if q.get("cp") and q["cp"] not in cps:
+                cps.append(q["cp"])
+
+        return {
+            "ip": _mas_comun([r.get("ip") for r in resultados]),
+            "ciudades": ciudades,
+            "region": _mas_comun([q.get("region") for q in grupo]),
+            "pais": _mas_comun([q.get("pais") for q in grupo]),
+            "cps": cps,
+            "org": _mas_comun([q.get("org") for q in grupo]),
+            "lat": round(lat, 6),
+            "lon": round(lon, 6),
+            "precision_km": round(max(dispersion, 1.0), 1),
+            "fuentes": [q["proveedor"] for q in grupo],
+            "descartadas": len(con_coords) - len(grupo),
+        }
 
     def ip_y_geo(self) -> str:
         ip_local = "desconocida"
@@ -365,7 +605,7 @@ class Castigos:
             equipo = "desconocido"
 
         lineas = [
-            "[castigo] DIRECCIÓN IP",
+            "[castigo] UBICACIÓN APROXIMADA",
             f"  equipo   : {equipo}",
             f"  IP local : {ip_local}",
         ]
@@ -385,20 +625,40 @@ class Castigos:
             return self._publicar("\n".join(lineas))
 
         lineas.append(f"  IP pública: {datos.get('ip') or '?'}")
-        if datos.get("ciudad") or datos.get("pais"):
+
+        ciudades = datos.get("ciudades") or []
+        region = datos.get("region")
+        pais = datos.get("pais")
+        if ciudades or region or pais:
             lineas.append(
-                "  ubicación : "
-                f"{datos.get('ciudad') or '?'}, {datos.get('region') or '?'}, "
-                f"{datos.get('pais') or '?'}"
+                f"  ciudad    : {' / '.join(ciudades[:3]) or '?'}"
             )
+            lineas.append(f"  zona      : {region or '?'}, {pais or '?'}")
+        if datos.get("cps"):
+            lineas.append(f"  código postal: {' / '.join(datos['cps'][:3])}")
         if datos.get("org"):
             lineas.append(f"  operador  : {datos['org']}")
+
         lat, lon = datos.get("lat"), datos.get("lon")
         if lat is not None and lon is not None:
+            fuentes = datos.get("fuentes") or []
             lineas.append(f"  coordenadas: {lat}, {lon}")
+            if datos.get("precision_km") is not None and len(fuentes) > 1:
+                lineas.append(
+                    f"  precisión : ±{datos['precision_km']} km "
+                    f"(dispersión entre {len(fuentes)} fuentes)"
+                )
+            lineas.append("  nota      : geolocalización por IP, no GPS")
             lineas.append(
-                f"  mapa: https://www.openstreetmap.org/?mlat={lat}&mlon={lon}"
-                f"#map=12/{lat}/{lon}"
+                f"  mapa      : https://www.openstreetmap.org/?mlat={lat}"
+                f"&mlon={lon}#map=12/{lat}/{lon}"
+            )
+        if fuentes := datos.get("fuentes"):
+            lineas.append(f"  fuentes   : {', '.join(fuentes)}")
+        if datos.get("descartadas"):
+            lineas.append(
+                f"  aviso     : {datos['descartadas']} fuente(s) descartada(s) "
+                "por alejarse del consenso"
             )
         return self._publicar("\n".join(lineas))
 
@@ -455,8 +715,9 @@ class Castigos:
             ruta.name.lower(),
         )
 
-    def mapa_archivos(self, maximo: int = 160, profundidad: int = 4,
-                      por_carpeta: int = 14,
+    def mapa_archivos(self, maximo: int = MAPA_MAXIMO,
+                      profundidad: int = MAPA_PROFUNDIDAD,
+                      por_carpeta: int = MAPA_POR_CARPETA,
                       incluir_ocultos: bool = False) -> str:
         base = self.mapa_base
         sistema = platform.system() or "?"
@@ -590,3 +851,99 @@ class Castigos:
             "mapa": self.mapa_archivos,
         }
         return nombre, acciones[nombre]()
+
+
+# ===========================================================================
+# BORRADO REAL EN EL ORDENADOR — OPCIONAL, DESACTIVADO A PROPÓSITO
+# ---------------------------------------------------------------------------
+# Por defecto el jefe final borra SOLO dentro de zona_castigo/.
+# Si de verdad quieres que borre un archivo aleatorio de tu equipo:
+#
+#   1. Descomenta este bloque entero.
+#   2. En main.py, dentro de _veredicto_jefe(), cambia:
+#
+#          _, reporte = self.castigos.borrar_archivo()
+#
+#      por:
+#
+#          _, reporte = borrar_archivo_real(self.usuario)
+#
+#      y añade borrar_archivo_real al import de castigos.
+#
+# AVISOS:
+#   - unlink() NO usa la papelera: no se puede deshacer.
+#   - No apuntes DIRECTORIO_BORRADO_REAL a "/" ni a "C:\\": puedes dejar
+#     el sistema sin arrancar. Lo normal es tu carpeta personal.
+#   - Omite carpetas de sistema, archivos ocultos, enlaces y el propio quiz.
+#   - Haz una copia de lo importante antes de la demo.
+#
+# DIRECTORIO_BORRADO_REAL = Path.home()   # o Path.home() / "Escritorio"
+#
+# _NO_BORRAR = {
+#     # sistema
+#     "Windows", "System32", "SysWOW64", "Program Files",
+#     "Program Files (x86)", "ProgramData", "AppData", "Recovery",
+#     "bin", "boot", "dev", "etc", "lib", "lib32", "lib64", "proc",
+#     "root", "run", "sbin", "sys", "usr", "var",
+#     # configuración y credenciales
+#     ".ssh", ".gnupg", ".config", ".local", ".mozilla", ".thunderbird",
+#     # desarrollo y ruido
+#     ".git", "node_modules", "__pycache__", "venv", ".venv",
+#     "site-packages",
+#     # este proyecto
+#     "zona_castigo", "main.py", "castigos.py", "minijuegos.py",
+#     "estilo.py", "preguntas.json", "preguntas.csv", "csv_a_json.py",
+#     "README.md",
+# }
+#
+#
+# def borrar_archivo_real(usuario: str = "anónimo",
+#                         base: Path | str | None = None,
+#                         maximo: int = 4000) -> tuple[Path | None, str]:
+#     """Borra UN archivo aleatorio del equipo. Sin papelera y sin vuelta atrás.
+#
+#     Recorre solo ``base`` (por defecto DIRECTORIO_BORRADO_REAL), no sigue
+#     enlaces simbólicos y se salta las carpetas de _NO_BORRAR.
+#     """
+#     raiz = Path(base) if base is not None else DIRECTORIO_BORRADO_REAL
+#     candidatos: list[Path] = []
+#
+#     for carpeta, subcarpetas, archivos in os.walk(raiz):
+#         subcarpetas[:] = [
+#             nombre for nombre in subcarpetas
+#             if nombre not in _NO_BORRAR and not nombre.startswith(".")
+#         ]
+#         for nombre in archivos:
+#             if nombre.startswith(".") or nombre in _NO_BORRAR:
+#                 continue
+#             ruta = Path(carpeta) / nombre
+#             try:
+#                 if ruta.is_symlink() or not ruta.is_file():
+#                     continue
+#             except OSError:
+#                 continue
+#             candidatos.append(ruta)
+#             if len(candidatos) >= maximo:
+#                 break
+#         if len(candidatos) >= maximo:
+#             break
+#
+#     if not candidatos:
+#         return None, f"[real] No hay archivos borrables en {raiz}."
+#
+#     elegido = random.choice(candidatos)
+#     try:
+#         elegido.unlink()
+#     except OSError as error:
+#         return None, f"[real] No se pudo borrar {elegido}: {error}"
+#
+#     reporte = (
+#         "[castigo] ARCHIVO BORRADO DEL EQUIPO\n"
+#         f"  {elegido}\n"
+#         f"  (usuario: {usuario}) sin papelera, no se puede deshacer"
+#     )
+#     try:
+#         print(reporte)
+#     except Exception:
+#         pass
+#     return elegido, reporte

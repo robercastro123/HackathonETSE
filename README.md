@@ -1,6 +1,6 @@
 # HackathonETSE
 
-Quiz kiosco en pantalla completa con minijuegos, comodines y castigos.
+Quiz kiosco en pantalla completa con un minijuego, comodines y castigos.
 
 ## Ejecutar
 
@@ -18,94 +18,122 @@ el quiz funciona igual, solo con los bloqueos de ventana.
 ## Cómo se juega
 
 ```
-minijuego -> 3 preguntas -> jefe final (3 preguntas, hacen falta 2)
+minijuego (pinchos, sin tiempo) -> 5 preguntas -> jefe final (3, hacen falta 2)
 ```
 
 Al empezar se detecta automáticamente el usuario del sistema (no se pregunta
-nada). Se usan 6 preguntas al azar de `preguntas.json` (3 de la ronda y 3 del
+nada). Se usan 8 preguntas al azar de `preguntas.json` (5 de la ronda y 3 del
 jefe). Si añades más filas al CSV, se mezclan automáticamente; hacen falta al
-menos 6.
+menos 8.
 
-### Minijuegos
+Cada pregunta muestra su **categoría con el nombre completo**:
 
-Cada uno dura entre 20 y 22 segundos y da comodines según el rango:
+| Código | Nombre |
+|--------|--------|
+| `Geo` | Geografía |
+| `CiNat` | Ciencias Naturales |
+| `Hist` | Historia |
+| `Entre` | Entretenimiento |
+| `ArLit` | Arte y Literatura |
+| `DepCo` | Deporte y Comida |
+| `Prog` | Programación |
+| `Act` | Actualidad |
 
-| Rango | Comodines |
-|-------|-----------|
-| alto  | 2         |
-| medio | 1         |
-| bajo  | 0         |
+### Minijuego
 
-| Minijuego | Controles | Puntos |
-|-----------|-----------|--------|
-| Ball Drop | `←` `→` | bolas atrapadas |
-| Parcel Panic | clic | paquetes recogidos (rojo = bomba, resta) |
-| Fruit Ninja | clic | frutas cortadas (bomba = −3) |
-| Crossy Road | flechas | filas cruzadas |
-| Don't Touch the Spikes | `espacio` | huecos pasados |
-| Jungle Run | `espacio` | troncos esquivados |
+Solo hay uno: **Don't Touch the Spikes**, y ya **no tiene límite de tiempo**.
+Pulsa `espacio` para aletear y pasa por los huecos; termina cuando chocas.
+Da comodines según el rango:
 
-El minijuego de cada partida se elige al azar entre los seis.
+| Rango | Comodines | Puntos |
+|-------|-----------|--------|
+| alto  | 2 | 6 o más huecos |
+| medio | 1 | 3 a 5 |
+| bajo  | 0 | 0 a 2 |
+
+Los otros cinco minijuegos siguen en `minijuegos.py` (`MINIJUEGOS_ANTIGUOS`)
+por si quieres recuperarlos, pero no entran en la partida.
 
 ### Comodines
 
-Los comodines del minijuego se usan tanto en las 3 preguntas como en el jefe
-final. Al fallar una pregunta, si queda algún comodín,
-se gasta uno automáticamente: **te libras del castigo** y puedes volver a
-intentar la misma pregunta (la opción fallada queda bloqueada). Sin comodines
-se aplica el castigo y se revela la respuesta correcta.
+Los comodines del minijuego se usan en las 5 preguntas y en el jefe final.
+Al fallar, si queda alguno, se gasta automáticamente: **ni castigo ni nombre**,
+y repites la misma pregunta con la opción fallada bloqueada.
 
 ### Fallos
 
-- **Primer fallo de la partida:** se imprime por pantalla el nombre del usuario
-  real del sistema y el nombre del equipo, y también en la consola. No hay
-  castigo todavía. Si te queda algún comodín, se gasta y vuelves a intentarlo.
-- **Resto de fallos de la ronda:** si **no** te queda ningún comodín se
-  aplica un castigo aleatorio. Se usa una bolsa barajada: en cinco castigos
-  salen los cinco tipos.
+- **Cada fallo sin comodín en las 5 preguntas aplica un castigo**, también el
+  primero. En el primer fallo, además, se imprime el nombre del usuario real
+  del sistema y el equipo (por pantalla y en la consola).
+- La pregunta **no avanza hasta que aciertas**: la opción fallada se queda
+  bloqueada y las demás siguen disponibles.
+- Los castigos no se repiten hasta que han salido los cinco. Si se agotan,
+  la bolsa se vuelve a barajar.
   - mover un archivo,
   - modificar un archivo,
-  - listar los puertos abiertos de `127.0.0.1` (35 puertos habituales),
+  - listar los puertos abiertos de `127.0.0.1`,
   - mostrar IP local, IP pública y geolocalización (si hay red),
   - dibujar el mapa de archivos del sistema.
-- **Fallos en el jefe final:** no aplican castigos sueltos; cuentan para el
-  veredicto.
+- **Jefe final:** no hay castigos. Cada pregunta se resuelve al fallar (se
+  revela la correcta y se pasa a la siguiente), para que el veredicto 2/3
+  tenga sentido.
 
-### Inspección del sistema
+### Jefe final
+
+3 preguntas. Con **2 aciertos o más** se supera. Con **1 o menos** se borra
+un archivo de la zona de castigo.
+
+## Inspección del sistema
 
 Los puertos, la IP y la geolocalización se consultan de verdad en el equipo.
-El mapa de archivos recorre una carpeta **en modo solo lectura** y **detecta
-el sistema operativo automáticamente**:
+
+### Puertos
+
+Se comprueba una lista **fija de 43 puertos habituales** en `127.0.0.1`,
+`::1` y tu IP local, y se indica en cuál respondió cada uno (SSH, HTTP, HTTPS,
+MySQL, RDP, VNC, Redis, MongoDB, etc.). El escaneo es real y rápido (~0,02 s);
+solo se muestran los que están abiertos. La lista está en `SERVICIOS`, al
+principio de `castigos.py`. Aquí, por ejemplo, aparecen `22/tcp SSH` y
+`631/tcp IPP`.
+
+### IP y geolocalización
+
+Se consultan **5 proveedores en paralelo** (`ipapi.co`, `ipwho.is`,
+`ip-api.com`, `freeipapi`, `ipinfo.io`), se agrupan las respuestas que coinciden
+y se descartan las que se van a otra provincia (más de 40 km). Muestra ciudad,
+código postal, coordenadas, la dispersión entre fuentes (`±X km`) y un enlace
+al mapa. La primera consulta tarda ~1 s y se cachea durante la partida.
+
+Es geolocalización **por IP**: la precisión real es de ciudad, no de GPS. Sin
+conexión solo se muestra la IP local. Se puede desactivar con
+`PERMITIR_RED = False` en `castigos.py`.
+
+### Mapa de archivos
+
+Recorre una carpeta **en modo solo lectura** y **detecta el sistema operativo
+automáticamente**:
 
 ```python
 DIRECTORIO_MAPA = raiz_del_sistema()
 # Windows -> C:\      Linux / macOS -> /
 ```
 
-- La cabecera del informe muestra el sistema detectado (p. ej. `Linux 7.0…`).
+- La cabecera muestra el sistema detectado (p. ej. `Linux 7.0…`).
 - Se puede forzar otra raíz, por ejemplo tu carpeta personal:
   `DIRECTORIO_MAPA = Path.home()`.
-- Con 4 niveles de profundidad, un máximo de 160 entradas y 14 por carpeta.
-  El presupuesto se reparte entre las ramas para que `/boot` o `/etc` no se
-  coman el mapa y siempre salgan `/home`, `/etc`, `/var`, `/usr`, etc.
+- 8 niveles de profundidad, máximo 240 entradas y 16 por carpeta. El
+  presupuesto se reparte entre las ramas para que `/boot` o `/etc` no se coman
+  el mapa y siempre salgan `/home`, `/etc`, `/var`, `/usr`, etc. Se puede
+  ajustar con `MAPA_PROFUNDIDAD`, `MAPA_MAXIMO` y `MAPA_POR_CARPETA` al
+  principio de `castigos.py`.
 - Muestra siempre los directorios primero: aunque una carpeta tenga miles de
-  archivos, sus subcarpetas no se pierden. Oculta las carpetas que empiezan
-  por punto y omite `node_modules`, `venv`, `/proc`, `/sys`, `Windows`, etc.
+  archivos, sus subcarpetas no se pierden. Oculta las carpetas que empiezan por
+  punto y omite `node_modules`, `venv`, `/proc`, `/sys`, `Windows`, etc.
 - Si prefieres ver también los archivos ocultos:
   `app.castigos.mapa_archivos(incluir_ocultos=True)`.
 
-Todo esto aparece **en una ventana dentro del quiz** (con barra de desplazamiento
-para los informes largos) y además se escribe en la consola.
-
-La geolocalización prueba `ipapi.co`, luego `ipwho.is` y, si falla todo, al
-menos saca la IP pública con `ipify`. Se cachea durante la partida. Sin
-conexión solo se muestra la IP local. Se puede desactivar con
-`PERMITIR_RED = False` en `castigos.py`.
-
-### Jefe final
-
-3 preguntas. Con **2 aciertos o más** se supera. Con **1 o menos** se borra
-un archivo de la zona de castigo.
+Todo esto aparece **en una ventana dentro del quiz** (con barra de
+desplazamiento para los informes largos) y además se escribe en la consola.
 
 ## Zona de castigo
 
@@ -124,8 +152,28 @@ Aun así el módulo se niega a salir de esa carpeta y protege los archivos del
 propio proyecto (`main.py`, `preguntas.json`, `.git`, etc.). Haz una copia de
 seguridad antes de apuntar a una carpeta con cosas importantes.
 
-La geolocalización usa `ipapi.co`. Si no hay conexión, solo se muestra la IP
-local. Se puede desactivar con `PERMITIR_RED = False` en `castigos.py`.
+### Borrado real en el ordenador (opcional y comentado)
+
+Al final de `castigos.py` hay un bloque **comentado** con
+`borrar_archivo_real()`. Está desactivado a propósito: por defecto el jefe
+final solo borra en `zona_castigo/`. Para activarlo:
+
+1. Descomenta el bloque entero.
+2. En `main.py`, dentro de `_veredicto_jefe()`, cambia
+   `self.castigos.borrar_archivo()` por `borrar_archivo_real(self.usuario)`
+   y añade `borrar_archivo_real` al import.
+3. Ajusta `DIRECTORIO_BORRADO_REAL` (por defecto `Path.home()`).
+
+Qué hace y qué evita:
+
+- Elige **un archivo al azar** entre hasta 4000 candidatos y lo borra con
+  `unlink()` (sin papelera).
+- No sigue enlaces simbólicos.
+- No entra en carpetas de sistema (`Windows`, `System32`, `/usr`, `/etc`…),
+  ocultas (`.ssh`, `.config`…), de desarrollo (`node_modules`, `venv`) ni en
+  `zona_castigo`.
+- Protege los archivos del propio quiz.
+- **No lo apuntes a `/` ni a `C:\`**: podrías dejar el sistema sin arrancar.
 
 ## Salir
 
@@ -138,8 +186,8 @@ local. Se puede desactivar con `PERMITIR_RED = False` en `castigos.py`.
 | Archivo | Contenido |
 |---------|-----------|
 | `main.py` | flujo del quiz, pantallas, comodines, jefe final y bloqueos |
-| `minijuegos.py` | los 6 minijuegos y el sistema de rangos |
-| `castigos.py` | mover/modificar/borrar, puertos, IP y mapa (sin Tkinter) |
+| `minijuegos.py` | los minijuegos y el sistema de rangos |
+| `castigos.py` | mover/modificar/borrar, puertos, IP, mapa y geolocalización |
 | `estilo.py` | colores y fuentes |
 | `csv_a_json.py` | conversor de `preguntas.csv` a `preguntas.json` |
 

@@ -5,16 +5,17 @@ Pantalla completa sin salida manual.
 
 Flujo de la partida:
 
-    minijuego -> 3 preguntas -> jefe final (3, hacen falta 2)
+    minijuego (pinchos, sin tiempo) -> 5 preguntas -> jefe final (3)
 
 - El minijuego da comodines según el rango:
       alto  2 | medio  1 | bajo  0
   Un comodín se gasta al fallar: evita el castigo y deja reintentar.
-- El primer fallo de la partida imprime el nombre del usuario del sistema
-  por pantalla.
-- Los fallos posteriores SIN comodín aplican un castigo aleatorio.
-- En el jefe final hacen falta 2 aciertos de 3; con 1 o menos se borra un
-  archivo.
+- Cada fallo SIN comodín en las preguntas aplica un castigo (sin repetir
+  hasta agotar los cinco) y repite la misma pregunta hasta acertar.
+- El primer fallo SIN comodín, además, imprime el nombre del usuario del
+  sistema por pantalla.
+- En el jefe final no hay castigos y hacen falta 2 aciertos de 3; con 1 o
+  menos se borra un archivo.
 
 Los castigos actúan SOLO dentro de ``zona_castigo`` (ver castigos.py).
 Salida de emergencia para el operador: pulsar F12 tres veces seguidas.
@@ -40,11 +41,22 @@ from minijuegos import MINIJUEGOS
 BLOQUEO_GLOBAL = True            # Nivel 2: tecla Windows y Alt+Tab
 BLOQUEO_REGISTRO = True          # Nivel 3: Task Manager y Win+L (solo Windows)
 
-PREGUNTAS_POR_RONDA = 3
+PREGUNTAS_POR_RONDA = len(Castigos.CASTIGOS)  # una por cada castigo distinto
 PREGUNTAS_JEFE = 3
 ACIERTOS_MINIMOS_JEFE = 2
 NEUTRALIZAR_ATAJOS = ("<Alt-F4>", "<Control-w>", "<Control-q>",
                       "<Control-W>", "<Control-Q>", "<Alt-Tab>")
+
+CATEGORIAS = {
+    "Act": "Actualidad",
+    "ArLit": "Arte y Literatura",
+    "CiNat": "Ciencias Naturales",
+    "DepCo": "Deporte y Comida",
+    "Entre": "Entretenimiento",
+    "Geo": "Geografía",
+    "Hist": "Historia",
+    "Prog": "Programación",
+}
 
 try:
     import keyboard  # pip install keyboard
@@ -235,7 +247,8 @@ class Aplicacion:
         f = self._nueva()
         self._texto(f, "QUIZ HACKATHON", 44, T.ACCENT, True, pady=(70, 4))
         self._texto(
-            f, "1 minijuego · 3 preguntas · jefe final de 3",
+            f, f"1 minijuego · {PREGUNTAS_POR_RONDA} preguntas · "
+               f"jefe final de {PREGUNTAS_JEFE}",
             16, T.MUTED, False, pady=(0, 30),
         )
         self._texto(
@@ -284,8 +297,13 @@ class Aplicacion:
         self._texto(f, clase.ayuda, 16, T.FG, False, pady=(0, 26))
         self._texto(
             f,
-            f"Rango ALTO  +2 comodines     Rango MEDIO  +1     "
-            f"Rango BAJO  +0\nDuración: {int(clase.duracion)} segundos",
+            "Rango ALTO  +2 comodines     Rango MEDIO  +1     "
+            "Rango BAJO  +0\n"
+            + (
+                f"Duración: {int(clase.duracion)} segundos"
+                if clase.duracion
+                else "Sin límite de tiempo: hasta que choques"
+            ),
             14, T.MUTED, False, pady=(0, 30),
         )
         self._boton(
@@ -372,7 +390,11 @@ class Aplicacion:
         self.lbl_stats = self._texto(
             f, self._texto_stats(), 12, T.MUTED, False, pady=(0, 10),
         )
-        self._texto(f, pregunta.get("categoria", ""), 12, T.MUTED, True, pady=0)
+        categoria = pregunta.get("categoria", "")
+        self._texto(
+            f, f"Categoría: {CATEGORIAS.get(categoria, categoria)}",
+            12, T.MUTED, True, pady=0,
+        )
 
         self._texto(f, pregunta["pregunta"], 26, T.FG, True, pady=(10, 22))
 
@@ -448,61 +470,83 @@ class Aplicacion:
             return
 
         self.opciones[elegida].config(bg=T.BAD, fg="white")
+        self.bloqueadas.add(elegida)
         self.fallos += 1
         self.comprobando_fallo = elegida
         self._actualizar_stats()
+        self._decidir_fallo()
 
-        if self.primer_fallo:
-            self.primer_fallo = False
-            sistema, equipo = self.castigos.identidad()
-            self._consola("=" * 46)
-            self._consola(f"  usuario del sistema: {sistema}")
-            self._consola(f"  equipo: {equipo}")
-            self._consola("=" * 46)
-            aviso = (
-                "Te quedan comodines: este fallo no tiene castigo."
-                if self.comodines
-                else "La próxima vez que falles sin comodín habrá consecuencias."
-            )
-            self._reporte(
-                "PRIMER FALLO",
-                f"usuario del sistema: {sistema}\n"
-                f"equipo: {equipo}",
-                f"Te hemos identificado, {sistema}.\n{aviso}",
-                color=T.WARN, destacado=sistema,
-                continuar=lambda: self._decidir_fallo(primer=True),
-            )
-        else:
-            self._decidir_fallo()
+    def _banner_identidad(self, sistema, equipo):
+        self._consola("=" * 46)
+        self._consola(f"  usuario del sistema: {sistema}")
+        self._consola(f"  equipo: {equipo}")
+        self._consola("=" * 46)
 
-    def _decidir_fallo(self, primer=False):
-        """El comodín se gasta antes de decidir el castigo: te libra de él."""
+    def _decidir_fallo(self):
+        """Comodín primero. En las rondas cada fallo castiga y se reintenta."""
         if self.comodines > 0:
             self._usar_comodin()
             return
-        if primer or self.es_jefe:
-            self._revelar()
-            return
-        nombre, reporte = self.castigos.castigo_aleatorio()
-        self._reporte(
-            f"CASTIGO · {nombre.upper()}", reporte, None,
-            color=T.BAD, continuar=self._revelar,
-        )
 
-    def _usar_comodin(self):
-        self.comodines -= 1
-        self.comodines_usados += 1
-        self.bloqueadas.add(self.comprobando_fallo)
+        sistema, equipo = self.castigos.identidad()
+
+        if self.es_jefe:
+            if self.primer_fallo:
+                self.primer_fallo = False
+                self._banner_identidad(sistema, equipo)
+                self._reporte(
+                    "PRIMER FALLO",
+                    f"usuario del sistema: {sistema}\n"
+                    f"equipo: {equipo}",
+                    f"Te hemos identificado, {sistema}.",
+                    color=T.WARN, destacado=sistema,
+                    continuar=self._revelar,
+                )
+            else:
+                self._revelar()
+            return
+
+        era_el_primero = self.primer_fallo
+        if era_el_primero:
+            self.primer_fallo = False
+            self._banner_identidad(sistema, equipo)
+
+        nombre, reporte = self.castigos.castigo_aleatorio()
+
+        if era_el_primero:
+            self._reporte(
+                "PRIMER FALLO",
+                f"usuario del sistema: {sistema}\n"
+                f"equipo: {equipo}\n\n{reporte}",
+                f"Te hemos identificado, {sistema}. Y este es el castigo.",
+                color=T.WARN, destacado=sistema,
+                continuar=self._reintentar,
+            )
+        else:
+            self._reporte(
+                f"CASTIGO · {nombre.upper()}", reporte, None,
+                color=T.BAD, continuar=self._reintentar,
+            )
+
+    def _reintentar(self):
+        self.respondida = False
+        self.seleccion.set(-1)
         for indice, boton in enumerate(self.opciones):
             if indice in self.bloqueadas:
                 boton.config(state="disabled", bg=T.CARD, fg=T.MUTED)
             else:
                 boton.config(state="normal", bg=T.CARD, fg=T.FG)
-        self.seleccion.set(-1)
-        self.respondida = False
         self.boton_accion.config(
             text="RESPONDER", state="disabled", command=self._comprobar
         )
+        self.feedback.config(
+            text="Otra oportunidad: marca la respuesta correcta.", fg=T.WARN
+        )
+
+    def _usar_comodin(self):
+        self.comodines -= 1
+        self.comodines_usados += 1
+        self._reintentar()
         self.feedback.config(
             text=(
                 "Comodín gastado: te libras del castigo. "
@@ -613,6 +657,9 @@ class Aplicacion:
         self._consola(
             f"[jefe] {self.aciertos_jefe}/{PREGUNTAS_JEFE} -> castigo final"
         )
+        # Para borrar de verdad en el equipo (mira el bloque comentado al
+        # final de castigos.py), sustituye la línea de debajo por:
+        #     _, reporte = borrar_archivo_real(self.usuario)
         _, reporte = self.castigos.borrar_archivo()
         self._pantalla_final(reporte)
 
