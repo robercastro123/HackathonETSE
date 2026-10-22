@@ -21,34 +21,34 @@ from tkinter import messagebox, simpledialog
 # ----------------------------------------------------------------------
 
 PALABRA_SALIDA = "abracadabra"   # palabra para salir antes de terminar
-
-PREGUNTAS = [
-    {
-        "pregunta": "¿Qué significa HTTP?",
-        "opciones": [
-            "HyperText Transfer Protocol",
-            "High Transfer Text Protocol",
-            "HyperType Transmission Program",
-            "Home Tool Transfer Protocol",
-        ],
-        "correcta": 0,  # índice de la opción correcta (empieza en 0)
-    },
-    {
-        "pregunta": "¿Cuál es el puerto por defecto de HTTPS?",
-        "opciones": ["80", "22", "443", "8080"],
-        "correcta": 2,
-    },
-    {
-        "pregunta": "¿Qué estructura de datos es LIFO?",
-        "opciones": ["Cola (Queue)", "Pila (Stack)", "Árbol", "Grafo"],
-        "correcta": 1,
-    },
-    {
-        "pregunta": "¿Qué comando lista archivos en Linux?",
-        "opciones": ["dir", "ls", "list", "show"],
-        "correcta": 1,
-    },
-]
+#
+#PREGUNTAS = [
+ #   {
+  #      "pregunta": "¿Qué significa HTTP?",
+   #     "opciones": [
+    #        "HyperText Transfer Protocol",
+     #       "High Transfer Text Protocol",
+      #      "HyperType Transmission Program",
+       #     "Home Tool Transfer Protocol",
+#        ],
+ #       "correcta": 0,  # índice de la opción correcta (empieza en 0)
+  #  },
+   # {
+    #    "pregunta": "¿Cuál es el puerto por defecto de HTTPS?",
+     #   "opciones": ["80", "22", "443", "8080"],
+#        "correcta": 2,
+#    },
+#    {
+#        "pregunta": "¿Qué estructura de datos es LIFO?",
+#        "opciones": ["Cola (Queue)", "Pila (Stack)", "Árbol", "Grafo"],
+#        "correcta": 1,
+#    },
+#    {
+#        "pregunta": "¿Qué comando lista archivos en Linux?",
+#        "opciones": ["dir", "ls", "list", "show"],
+#        "correcta": 1,
+#    },
+#]
 
 # ----------------------------------------------------------------------
 # APLICACIÓN
