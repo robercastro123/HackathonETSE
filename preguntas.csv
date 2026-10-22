@@ -1,81 +1,61 @@
 Categoría,Pregunta,Correcta,Incorr1,Incorr2,Incorr3
 Geo,¿Cuántos continentes hay?,Ocho,Siete,Seis,Tres
-Geo,¿Qué ave aparece en la bandera de uganda?,Grulla,Pavo real,Gallo,Loro
+Geo,¿Qué ave aparece en la bandera de Uganda?,Grulla,Pavo real,Gallo,Loro
 Geo,¿Con cuántos países colinda Laos?,5,2,3,4
 Geo,"¿En qué ciudad está ""la nariz"" de la Península Ibérica?",Lisboa,Murcia,Barcelona,Algarve
 Geo,"En el año 1980, ¿qué países eran fronterizos con Finlandia?","Suecia, Noruega, Unión Soviética","Suecia, Unión Soviética","Suecia, Rusia","Suecia, Estonia, Unión Soviética"
-Geo,,,,,
-Geo,,,,,
-Geo,,,,,
-Geo,,,,,
-Geo,,,,,
+Geo,¿Cuántos países hay en las Naciones Unidas?,193,206,198,186
+Geo,¿Cuál es el lago más grande del mundo?,Mar Caspio,Mar Negro,Lago Baikal,Lago Superior
+Geo,¿Cuántos océanos hay?,5,6,7,8
+Geo,¿Cuál es la capital de Letonia?,Riga,Vilna,Tallín,San Petesburgo
+Geo,¿Qué color no está en la bandera de Seychelles?,Negro,Rojo,Azul,Verde
 CiNat,¿Cuántos dientes tienen los pingüinos?,Cero,Veintiseis,Treinta y dos,Cuarenta y ocho
 CiNat,¿Cuál la célula más grande del mundo?,Huevo de avestruz,Ser humano,Bacterias,Tardígrado
 CiNat,¿Cuántos árboles hay en el Amazonas?,390 mil millones,500 mil millones,280 mil millones,450 mil millones
 CiNat,¿Cuánto es 3523 * 12098?,42621254,83831084,18341984,16838974
-CiNat,,,,,
-CiNat,,,,,
-CiNat,,,,,
-CiNat,,,,,
-CiNat,,,,,
-CiNat,,,,,
+CiNat,¿Cuál es el tiempo de gestación de un elefante blanco?,21 meses,20 meses,22 meses,24 meses
+CiNat,¿Qué elemento químico NO hay en agua salada?,Nitrógeno,Sodio,Cloro,Hidrógeno
+CiNat,¿Cuál es la aceleración de la gravedad en la Luna (m/s²)?,1.6,9.8,2.8,5.4
+CiNat,¿Cuánto mide el diámetro de la Tierra?,12742 km,14243 km,6357 km,56718 km
+CiNat,¿Cuál es la mayor racha de viento registrada?,408 km/h,387 km/h,219 km/h,89 km/h
+CiNat,¿Cuál es la temperatura más fría registrada en la Tierra?,-98 ºC,-104 ºC,-121 ºC,-119 ºC
 ArLit,¿Quién pintó Castaños en Osny?,Camile Pissarro,Edward Hopper,Édouard Manet,Claude Monet
 ArLit,¿En qué año salió el libro 1984?,1949,1984,2001,1952
 ArLit,¿Cómo murió Virginia Woolf?,Suicidio,Asesinada,Tuberculosis,Muerte natural
-ArLit,,,,,
-ArLit,,,,,
-ArLit,,,,,
-ArLit,,,,,
-ArLit,,,,,
-ArLit,,,,,
-ArLit,,,,,
+ArLit,¿Cuál de estos artistas es / son una mujer?,Rosalía de Castro,Carolina Durante,Carmen Mola,Love of Lesbian
+ArLit,¿Qué obra NO escribió Federico García Lorca?,La Gitanilla,Poeta en Nueva York,Poemas en Prosa,La Bola Negra
+ArLit,¿Cómo se apellidaba Miguel Ángel?,Buonarroti,Da Vinci,Pausini,Velázquez
+ArLit,¿Quién escribió Lazarillo de Tormes?,Anónimo,Tormes,Miguel de Cervantes,Lope de Vega
+ArLit,¿Quién ganó el primer Premio Cervanres?,Jorge Guillén,Cervantes,Rafael Alberti,Dámaso Alonso
+ArLit,¿Cuánto mide la Muralla China?,21200 km,4.5 m,6.5 m,10000 km
+ArLit,¿Qué material se usaba en el Renacimiento para esculpir?,Todas son correctas,Mármol,Bronce,Madera
 Hist,¿Cuál era la película favorita de Hitler?,King Kong,Ser o No Ser,Lo Que el Viento Se Llevó,Sopa de Ganso
 Hist,¿Cuánto medía Napoleón?,168 cm,178 cm,158 cm,190 cm
 Hist,¿Cuántas guerras mundiales hubo entre la primera y la segunda?,Cero,Una,Dos,Tres
 Hist,¿Cuántos años duró la Guerra de los Cien Años?,116,100,126,99
-Hist,,,,,
-Hist,,,,,
-Hist,,,,,
-Hist,,,,,
-Hist,,,,,
-Hist,,,,,
+Hist,¿Cuándo fue el terremoto más intenso registrado?,1906,2004,2011,1964
+Hist,¿En qué año empezó la Edad Media?,476,1492,711,2012
+Hist,¿Qué día de la semana llegó Colón a América?,Viernes,Lunes,Martes,Sábado
+Hist,¿Qué pasó en el 1948 en Israel?,Se independizó,Hubo un tsunami,Se dividió,Nada
+Hist,¿En cuántos países se dividió Yugoslavia?,7,8,9,6
+Hist,¿Cuántos países participaron en la Segunda Guerra Mundial?,21,15,4,32
 DepCo,¿Cuál es plato nacional de Nicaragua?,Gallo Pinto,Sopa de cuajada,Tortilla de maíz,Ayote en miel
 DepCo,¿Quién ganó el Tour de Francia 1996?,Bjarne Riis,Jan Ullrich,Richard Virenque,Bertín Osborne
 DepCo,¿Quién ganó el último mundial?,España,Messi,Andorra,Ciudad del Vaticano
-DepCo,,,,,
-DepCo,,,,,
-DepCo,,,,,
-DepCo,,,,,
-DepCo,,,,,
-DepCo,,,,,
-DepCo,,,,,
+DepCo,¿Cuál es la altura de una canasta reglamentaria?,305 cm,300 cm,285 cm,290 cm
+DepCo,¿Qué hortaliza es popularmente buena para la vista?,Zanahoria,Patata,Berenjena,Lechuga
+DepCo,¿Cuál de estos frutos no es una fruta?,Aceituna,Manzana,Calabaza,Frambuesa
+DepCo,¿Cuál es la velocidad máxima alcanzada por el hombre?,45 km/h,36 km/h,32 km/h,22 km/h
+DepCo,¿Con qué NO se suele rellenar una aceituna?,Patata,Anchoa,Pimiento,Almendra
+DepCo,¿Cuál de estos ingredientes contiene la paella valenciana?,Judías,Mejillón,Aceitunas,Cerdo
+DepCo,¿Qué deporte practicaba Pedro Sánchez?,Baloncesto,Fútbol,Tenis,Ping pong
 Entre,¿Quién dirigió La Diligencia (1939)?,John Ford,Sergio Leone,John Wayne,Alan Smithee
 Entre,¿En qué año salió Dune (1984)?,1984,2001,2021,2024
 Entre,¿Salió antes Frozen o Frozen 2?,Frozen,Frozen 2,Salieron a la vez,No existen
 Entre,¿Quién es el artista español con más Grammys?,Alejandro Sanz,Rosalía,C Tangana,Enrique Iglesias
-Entre,,,,,
-Entre,,,,,
-Entre,,,,,
-Entre,,,,,
-Entre,,,,,
-Entre,,,,,
-Prog,¿Cuál es el mejor lenguaje de programación?,Lua,Java,Python,C++
-Prog,¿Cuál es el mejor motor de videojuegos?,Roblox Studio,Unity,Godot,Unreal Engine
-Prog,,,,,
-Prog,,,,,
-Prog,,,,,
-Prog,,,,,
-Prog,,,,,
-Prog,,,,,
-Prog,,,,,
-Prog,,,,,
+Entre,¿Cuántas temporadas tiene Anatomía de Grey a día de hoy?,23,10,6,15
 Act,¿Dónde está Nicolás Maduro?,En la cárcel,Presidiendo Venezuela,De vacaciones,Jubilado
 Act,¿Quién preside la Comisión Europea?,Ursula von der Leyen,Biljana Borzan,Daniel Buda,Waldemar Buda
-Act,,,,,
-Act,,,,,
-Act,,,,,
-Act,,,,,
-Act,,,,,
-Act,,,,,
-Act,,,,,
-Act,,,,,
+Act,¿Cuánta gente murió por el COVID en el mundo?,15 millones,10 millones,20 millones,17 millones
+Act,¿Qué día asesinaron a Charlie Kirk?,10 de septiembre,11 de septiembre,9 de septiembre,13 de septiembre
+Act,¿Cuánto duró la independencia de Cataluña?,8 segundos,1 día,7 minutos,Sigue independizada
