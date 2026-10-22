@@ -89,12 +89,14 @@ Los puertos, la IP y la geolocalización se consultan de verdad en el equipo.
 
 ### Puertos
 
-Se comprueba una lista **fija de 43 puertos habituales** en `127.0.0.1`,
-`::1` y tu IP local, y se indica en cuál respondió cada uno (SSH, HTTP, HTTPS,
-MySQL, RDP, VNC, Redis, MongoDB, etc.). El escaneo es real y rápido (~0,02 s);
-solo se muestran los que están abiertos. La lista está en `SERVICIOS`, al
-principio de `castigos.py`. Aquí, por ejemplo, aparecen `22/tcp SSH` y
-`631/tcp IPP`.
+Se comprueba una lista **fija de 43 puertos TCP habituales** en `127.0.0.1` y
+`::1` (loopback), y se indica en cuál aceptó la conexión. Solo se listan los
+que están realmente abiertos; los cerrados no aparecen. El escaneo es real y
+rápido (~0,02 s). La lista está en `SERVICIOS`, al principio de
+`castigos.py`. Si no hay **ninguno** abierto, el castigo de puertos se salta
+automáticamente y se aplica otro distinto.
+
+Aquí, por ejemplo, aparecen `22/tcp SSH` y `631/tcp IPP`.
 
 ### IP y geolocalización
 

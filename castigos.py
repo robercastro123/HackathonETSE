@@ -418,18 +418,15 @@ class Castigos:
             "  añadidas 4 líneas al final"
         )
 
-    def puertos_abiertos(self) -> str:
-        ip_local = None
-        try:
-            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
-                sock.connect(("8.8.8.8", 80))
-                ip_local = sock.getsockname()[0]
-        except OSError:
-            pass
+    def puertos_abiertos(self):
+        """Lista solo los puertos que aceptan conexión de verdad.
 
+        Se comprueba el loopback IPv4 e IPv6, no la IP de red: así un
+        firewall o un antivirus que intercepte la interfaz no inventa
+        puertos abiertos. Devuelve None si no hay ninguno, para que el
+        llamador aplique otro castigo.
+        """
         objetivos = [("127.0.0.1", socket.AF_INET)]
-        if ip_local and ip_local != "127.0.0.1":
-            objetivos.append((ip_local, socket.AF_INET))
         if socket.has_ipv6:
             objetivos.append(("::1", socket.AF_INET6))
 
@@ -437,7 +434,7 @@ class Castigos:
             for host, familia in objetivos:
                 try:
                     with socket.socket(familia, socket.SOCK_STREAM) as sock:
-                        sock.settimeout(0.2)
+                        sock.settimeout(0.25)
                         if sock.connect_ex((host, puerto)) == 0:
                             return host
                 except OSError:
@@ -447,11 +444,6 @@ class Castigos:
         with ThreadPoolExecutor(max_workers=32) as pool:
             resultados = list(pool.map(abierto, SERVICIOS))
 
-        lineas = [
-            f"[castigo] PUERTOS ABIERTOS  "
-            f"({len(SERVICIOS)} puertos × {len(objetivos)} direcciones)",
-            f"  objetivos: {', '.join(host for host, _ in objetivos)}",
-        ]
         abiertos = [
             f"  {puerto:>5}/tcp  {servicio:<15} ({host})"
             for puerto, servicio, host in zip(
@@ -460,9 +452,14 @@ class Castigos:
             if host
         ]
         if not abiertos:
-            lineas.append("  (ninguno de los habituales respondió)")
-        else:
-            lineas.extend(abiertos)
+            return None
+
+        lineas = [
+            f"[castigo] PUERTOS ABIERTOS  "
+            f"({len(SERVICIOS)} puertos × {len(objetivos)} direcciones)",
+            f"  objetivos: {', '.join(host for host, _ in objetivos)}",
+        ]
+        lineas.extend(abiertos)
         return self._publicar("\n".join(lineas))
 
     def _pedir_json(self, url: str, timeout: float):
@@ -837,12 +834,9 @@ class Castigos:
         """Aplica un castigo al azar de los de ronda (sin borrar).
 
         Se usa una bolsa barajada: en cinco fallos salen los cinco tipos, sin
-        repetir hasta haberlos agotado.
+        repetir hasta haberlos agotado. Si un castigo no se puede aplicar
+        (por ejemplo, no hay ningún puerto abierto), se pasa al siguiente.
         """
-        if not self._bolsa:
-            self._bolsa = list(self.CASTIGOS)
-            random.shuffle(self._bolsa)
-        nombre = self._bolsa.pop()
         acciones = {
             "mover": self.mover_archivos,
             "modificar": self.modificar_archivos,
@@ -850,7 +844,19 @@ class Castigos:
             "ip": self.ip_y_geo,
             "mapa": self.mapa_archivos,
         }
-        return nombre, acciones[nombre]()
+
+        for _ in range(len(self.CASTIGOS) * 2):
+            if not self._bolsa:
+                self._bolsa = list(self.CASTIGOS)
+                random.shuffle(self._bolsa)
+            nombre = self._bolsa.pop()
+            reporte = acciones[nombre]()
+            if reporte is not None:
+                return nombre, reporte
+
+        return "ninguno", self._publicar(
+            "[castigo] No hay ningún castigo aplicable en este momento."
+        )
 
 
 # ===========================================================================
