@@ -26,11 +26,8 @@ Ejecútalo en tu propio ordenador.
 
 import sys
 import tkinter as tk
-<<<<<<< HEAD
 import json
 from pathlib import Path
-from tkinter import messagebox, simpledialog
-=======
 from tkinter import messagebox
 
 # El bloqueo global (Nivel 2) es opcional: si no está la librería
@@ -48,77 +45,16 @@ try:
     _WINREG_OK = True
 except Exception:
     _WINREG_OK = False
->>>>>>> c72e2bb (Describe tus cambios)
 
 # ----------------------------------------------------------------------
 # CONFIGURACIÓN — edita esto
 # ----------------------------------------------------------------------
 
-<<<<<<< HEAD
-PALABRA_SALIDA = "abracadabra"   # palabra para salir antes de terminar
-#
-#PREGUNTAS = [
- #   {
-  #      "pregunta": "¿Qué significa HTTP?",
-   #     "opciones": [
-    #        "HyperText Transfer Protocol",
-     #       "High Transfer Text Protocol",
-      #      "HyperType Transmission Program",
-       #     "Home Tool Transfer Protocol",
-#        ],
- #       "correcta": 0,  # índice de la opción correcta (empieza en 0)
-  #  },
-   # {
-    #    "pregunta": "¿Cuál es el puerto por defecto de HTTPS?",
-     #   "opciones": ["80", "22", "443", "8080"],
-#        "correcta": 2,
-#    },
-#    {
-#        "pregunta": "¿Qué estructura de datos es LIFO?",
-#        "opciones": ["Cola (Queue)", "Pila (Stack)", "Árbol", "Grafo"],
-#        "correcta": 1,
-#    },
-#    {
-#        "pregunta": "¿Qué comando lista archivos en Linux?",
-#        "opciones": ["dir", "ls", "list", "show"],
-#        "correcta": 1,
-#    },
-#]
-=======
 BLOQUEO_GLOBAL = True            # Nivel 2: suprimir tecla Windows y Alt+Tab
 BLOQUEO_REGISTRO = True          # Nivel 3: deshabilitar Administrador de
                                  # tareas (Ctrl+Shift+Esc) y Win+L vía
                                  # registro. Solo Windows. Se restaura al
-                                 # salir con la palabra clave.
-
-PREGUNTAS = [
-    {
-        "pregunta": "¿Qué significa HTTP?",
-        "opciones": [
-            "HyperText Transfer Protocol",
-            "High Transfer Text Protocol",
-            "HyperType Transmission Program",
-            "Home Tool Transfer Protocol",
-        ],
-        "correcta": 0,  # índice de la opción correcta (empieza en 0)
-    },
-    {
-        "pregunta": "¿Cuál es el puerto por defecto de HTTPS?",
-        "opciones": ["80", "22", "443", "8080"],
-        "correcta": 2,
-    },
-    {
-        "pregunta": "¿Qué estructura de datos es LIFO?",
-        "opciones": ["Cola (Queue)", "Pila (Stack)", "Árbol", "Grafo"],
-        "correcta": 1,
-    },
-    {
-        "pregunta": "¿Qué comando lista archivos en Linux?",
-        "opciones": ["dir", "ls", "list", "show"],
-        "correcta": 1,
-    },
-]
->>>>>>> c72e2bb (Describe tus cambios)
+                                 # salir.
 
 # ----------------------------------------------------------------------
 # APLICACIÓN
@@ -480,18 +416,13 @@ def cargar_preguntas():
 def main():
     preguntas = cargar_preguntas()
     root = tk.Tk()
-<<<<<<< HEAD
-    QuizKiosco(root, preguntas)
-    root.mainloop()
-=======
-    app = QuizKiosco(root)
+    app = QuizKiosco(root, preguntas)
     try:
         root.mainloop()
     finally:
         # Red de seguridad: si el programa peta a mitad, desbloquea igual.
         app._desactivar_bloqueo_global()
         app.bloqueo_registro.restaurar()
->>>>>>> c72e2bb (Describe tus cambios)
 
 
 if __name__ == "__main__":
